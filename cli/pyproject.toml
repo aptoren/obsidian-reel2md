@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reel2md"
+version = "0.1.0"
+description = "Convert Instagram Reels into structured Markdown notes with optional local transcription."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "aptoren"}]
+dependencies = [
+  "yt-dlp>=2026.3.0",
+  "faster-whisper>=1.1.0,<2",
+]
+
+[project.scripts]
+reel2md = "reel2md.cli:main"
+
+[tool.setuptools]
+packages = ["reel2md"]

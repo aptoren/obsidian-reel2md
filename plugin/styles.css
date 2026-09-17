@@ -1,0 +1,5 @@
+.reel2md-status {
+  white-space: pre-wrap;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}

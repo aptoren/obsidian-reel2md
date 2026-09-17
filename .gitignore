@@ -1,0 +1,20 @@
+# Node / plugin build
+node_modules/
+plugin/node_modules/
+plugin/main.js
+plugin/*.map
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Local settings / media
+.env
+*.log
+.DS_Store
+Thumbs.db
