@@ -1,8 +1,6 @@
 {
   "compilerOptions": {
     "baseUrl": ".",
-    "paths": {"*": ["node_modules/*"]},
-    "typeRoots": ["node_modules/@types", "node_modules"],
     "inlineSourceMap": true,
     "inlineSources": true,
     "module": "ESNext",
@@ -17,6 +15,8 @@
     "importHelpers": true,
     "downlevelIteration": true,
     "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"],
     "lib": ["dom", "es2022"]
   },
   "include": ["src/**/*.ts"]

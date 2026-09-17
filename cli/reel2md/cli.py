@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import random
 import re
 import shutil
@@ -16,9 +15,10 @@ from pathlib import Path
 from typing import Iterable
 
 from faster_whisper import WhisperModel
+from huggingface_hub import HfApi
 
 REEL_PATTERN = re.compile(
-    r"https?://(?:www\.)?instagram\.com/reel/"
+    r"https?://(?:www\.)?instagram\.com/(?P<kind>reels?|p|tv)/"
     r"(?P<code>[A-Za-z0-9_-]+)"
     r"/?(?:\?[^\s<>\"']*)?"
 )
@@ -81,12 +81,18 @@ def yaml_string(value: str | None) -> str:
 def extract_urls(text: str) -> list[tuple[str, str]]:
     items: list[tuple[str, str]] = []
     seen: set[str] = set()
+
     for match in REEL_PATTERN.finditer(text):
+        kind = match.group("kind")
         code = match.group("code")
+
         if code in seen:
             continue
+
         seen.add(code)
-        items.append((code, f"https://www.instagram.com/reel/{code}/"))
+        canonical_kind = "reel" if kind in {"reel", "reels"} else kind
+        items.append((code, f"https://www.instagram.com/{canonical_kind}/{code}/"))
+
     return items
 
 
@@ -162,9 +168,11 @@ def published_at_from_metadata(metadata: dict) -> str:
             return datetime.fromtimestamp(timestamp).astimezone().isoformat(timespec="seconds")
         except Exception:
             pass
+
     upload_date = str(metadata.get("upload_date") or "").strip()
     if len(upload_date) == 8 and upload_date.isdigit():
         return f"{upload_date[0:4]}-{upload_date[4:6]}-{upload_date[6:8]}"
+
     return ""
 
 
@@ -231,8 +239,15 @@ def render_note(
     if not title:
         title = caption.splitlines()[0].strip() if caption else f"Instagram Reel {source_id}"
 
-    creator = str(metadata.get("uploader") or metadata.get("channel") or metadata.get("creator") or "").strip()
-    creator_id = str(metadata.get("uploader_id") or metadata.get("channel_id") or "").strip()
+    creator = str(
+        metadata.get("uploader")
+        or metadata.get("channel")
+        or metadata.get("creator")
+        or ""
+    ).strip()
+    creator_id = str(
+        metadata.get("uploader_id") or metadata.get("channel_id") or ""
+    ).strip()
     published_at = published_at_from_metadata(metadata)
     captured_at = datetime.now().astimezone().isoformat(timespec="seconds")
     source_access = (
@@ -247,7 +262,10 @@ def render_note(
         "platform: instagram",
         f"source_url: {yaml_string(canonical_url)}",
         f"source_id: {yaml_string(source_id)}",
+        "aliases:",
+        f"  - {yaml_string(title)}",
     ]
+
     if config.include_creator:
         props.append(f"creator: {yaml_string(creator)}")
     if config.include_creator_id:
@@ -264,10 +282,16 @@ def render_note(
                 f"media_access: {yaml_string(media_access)}",
             ]
         )
-    props.append(f"caption_status: {'fetched' if config.include_caption else 'disabled'}")
+
+    props.append(
+        f"caption_status: {'fetched' if config.include_caption else 'disabled'}"
+    )
     if config.include_caption:
         props.append("caption_method: yt-dlp")
-    props.append(f"transcript_status: {'completed' if config.include_transcript else 'disabled'}")
+
+    props.append(
+        f"transcript_status: {'completed' if config.include_transcript else 'disabled'}"
+    )
     if config.include_transcript and config.include_transcript_meta:
         props.extend(
             [
@@ -276,13 +300,17 @@ def render_note(
                 f"transcript_language_probability: {transcript_probability:.3f}",
             ]
         )
+
     props.extend(["tags:", "  - source/instagram", "  - media/reel", "---", ""])
 
     sections = ["\n".join(props), f"# {title}", "", "## Source", "", canonical_url]
+
     if config.include_caption:
         sections.extend(["", "## Caption", "", caption or "[NO CAPTION]"])
+
     if config.include_transcript:
         sections.extend(["", "## Transcript", "", transcript])
+
     sections.extend(["", "## Notes", "", "", "## Derived Knowledge", ""])
     return "\n".join(sections).rstrip() + "\n"
 
@@ -300,12 +328,14 @@ def process_one(code: str, url: str, config: BatchConfig) -> str:
     needs_media = config.include_transcript or config.keep_audio or config.keep_video
     media_access = metadata_access
     media_url = ""
+
     if needs_media:
         media = resolve_media_url(url, config.browser, config.auth_fallback)
         media_url = media.value
         media_access = media.access
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
+
     if config.media_dir:
         config.media_dir.mkdir(parents=True, exist_ok=True)
 
@@ -317,16 +347,25 @@ def process_one(code: str, url: str, config: BatchConfig) -> str:
 
     try:
         if config.keep_video and config.media_dir:
-            ffmpeg_keep_video(config.ffmpeg, media_url, config.media_dir / f"{source_id}.mp4")
+            ffmpeg_keep_video(
+                config.ffmpeg,
+                media_url,
+                config.media_dir / f"{source_id}.mp4",
+            )
 
         if config.include_transcript or config.keep_audio:
             if config.keep_audio and config.media_dir:
                 audio_path = config.media_dir / f"{source_id}-speech.wav"
             else:
-                handle = tempfile.NamedTemporaryFile(prefix=f"{source_id}-", suffix=".wav", delete=False)
+                handle = tempfile.NamedTemporaryFile(
+                    prefix=f"{source_id}-",
+                    suffix=".wav",
+                    delete=False,
+                )
                 handle.close()
                 temp_audio = Path(handle.name)
                 audio_path = temp_audio
+
             ffmpeg_extract_audio(config.ffmpeg, media_url, audio_path)
 
         if config.include_transcript and audio_path:
@@ -344,8 +383,10 @@ def process_one(code: str, url: str, config: BatchConfig) -> str:
             transcript_language=language,
             transcript_probability=probability,
         )
+
         destination.write_text(note, encoding="utf-8")
         return "created"
+
     finally:
         if temp_audio and temp_audio.exists():
             temp_audio.unlink()
@@ -354,32 +395,42 @@ def process_one(code: str, url: str, config: BatchConfig) -> str:
 def process_batch(config: BatchConfig) -> int:
     if not config.input_file.is_file():
         raise SystemExit(f"Input file not found: {config.input_file}")
+
     if shutil.which(config.ffmpeg) is None and not Path(config.ffmpeg).is_file():
         raise SystemExit(f"ffmpeg not found: {config.ffmpeg}")
 
     items = extract_urls(config.input_file.read_text(encoding="utf-8"))
     if not items:
-        raise SystemExit("No Instagram Reel URLs found in the input file.")
+        raise SystemExit("No supported Instagram video URLs found in the input file.")
 
-    print(f"Found: {len(items)} unique Instagram Reel URL(s)", flush=True)
+    print(f"Found: {len(items)} unique Instagram URL(s)", flush=True)
+
     created = skipped = failed = 0
 
     for index, (code, url) in enumerate(items, start=1):
         print(f"[{index}/{len(items)}] {code}", flush=True)
+
         try:
             result = process_one(code, url, config)
+
             if result == "skipped":
                 skipped += 1
                 print("SKIP  Source note already exists", flush=True)
             else:
                 created += 1
                 print("OK", flush=True)
+
         except Exception as exc:
             failed += 1
             message = str(exc)
             print(f"FAIL  {message}", file=sys.stderr, flush=True)
+
             if detect_rate_limit(message):
-                print("STOP  Rate limit detected; batch stopped.", file=sys.stderr, flush=True)
+                print(
+                    "STOP  Rate limit detected; batch stopped.",
+                    file=sys.stderr,
+                    flush=True,
+                )
                 break
 
         if index < len(items):
@@ -387,43 +438,173 @@ def process_batch(config: BatchConfig) -> int:
             print(f"WAIT  {delay:.1f} seconds", flush=True)
             time.sleep(delay)
 
-    print(f"SUMMARY created={created} skipped={skipped} failed={failed}", flush=True)
+    print(
+        f"SUMMARY created={created} skipped={skipped} failed={failed}",
+        flush=True,
+    )
     return 0 if failed == 0 else 1
+
+
+def huggingface_repo_for_model(model: str) -> str | None:
+    expanded = Path(model).expanduser()
+
+    if expanded.exists():
+        return None
+
+    if "/" in model:
+        return model
+
+    return f"Systran/faster-whisper-{model}"
+
+
+def process_doctor(
+    input_file: Path,
+    browser: str,
+    auth_fallback: bool,
+    model: str,
+) -> int:
+    if not input_file.is_file():
+        raise SystemExit(f"Input file not found: {input_file}")
+
+    items = extract_urls(input_file.read_text(encoding="utf-8"))
+    if not items:
+        raise SystemExit("No supported Instagram video URLs found in the input file.")
+
+    code, url = items[0]
+    print(f"CHECK instagram_source={code}", flush=True)
+
+    _, metadata_access = fetch_json(url, browser, auth_fallback)
+    print(f"OK instagram_metadata access={metadata_access}", flush=True)
+
+    media = resolve_media_url(url, browser, auth_fallback)
+    print(f"OK instagram_media access={media.access}", flush=True)
+
+    repo_id = huggingface_repo_for_model(model)
+    if repo_id is None:
+        print("SKIP huggingface local_model_path=true", flush=True)
+    else:
+        info = HfApi().model_info(repo_id)
+        print(f"OK huggingface model={info.id}", flush=True)
+
+    print(
+        "NETWORK_OK "
+        f"instagram_metadata={metadata_access} "
+        f"instagram_media={media.access} "
+        f"huggingface={'local-model' if repo_id is None else 'ok'}",
+        flush=True,
+    )
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="reel2md")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    batch = subparsers.add_parser("batch", help="Process Reel URLs from a text or Markdown file")
+
+    batch = subparsers.add_parser(
+        "batch",
+        help="Process Instagram video URLs from a text or Markdown file",
+    )
     batch.add_argument("--input", required=True)
     batch.add_argument("--output", required=True)
     batch.add_argument("--media-dir")
     batch.add_argument("--ffmpeg", default="ffmpeg")
     batch.add_argument("--model", default="small.en")
     batch.add_argument("--browser", default="firefox")
-    batch.add_argument("--auth-fallback", action=argparse.BooleanOptionalAction, default=False)
-    batch.add_argument("--caption", action=argparse.BooleanOptionalAction, default=True)
-    batch.add_argument("--transcript", action=argparse.BooleanOptionalAction, default=True)
-    batch.add_argument("--keep-video", action=argparse.BooleanOptionalAction, default=False)
-    batch.add_argument("--keep-audio", action=argparse.BooleanOptionalAction, default=False)
-    batch.add_argument("--creator", action=argparse.BooleanOptionalAction, default=True)
-    batch.add_argument("--creator-id", action=argparse.BooleanOptionalAction, default=True)
-    batch.add_argument("--published-at", action=argparse.BooleanOptionalAction, default=True)
-    batch.add_argument("--captured-at", action=argparse.BooleanOptionalAction, default=True)
-    batch.add_argument("--access-meta", action=argparse.BooleanOptionalAction, default=True)
-    batch.add_argument("--transcript-meta", action=argparse.BooleanOptionalAction, default=True)
+    batch.add_argument(
+        "--auth-fallback",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    batch.add_argument(
+        "--caption",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    batch.add_argument(
+        "--transcript",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    batch.add_argument(
+        "--keep-video",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    batch.add_argument(
+        "--keep-audio",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    batch.add_argument(
+        "--creator",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    batch.add_argument(
+        "--creator-id",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    batch.add_argument(
+        "--published-at",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    batch.add_argument(
+        "--captured-at",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    batch.add_argument(
+        "--access-meta",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    batch.add_argument(
+        "--transcript-meta",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     batch.add_argument("--delay-min", type=float, default=3.0)
     batch.add_argument("--delay-max", type=float, default=15.0)
+
+    doctor = subparsers.add_parser(
+        "doctor",
+        help="Test Instagram and Hugging Face network access without ingesting media",
+    )
+    doctor.add_argument("--input", required=True)
+    doctor.add_argument("--model", default="small.en")
+    doctor.add_argument("--browser", default="firefox")
+    doctor.add_argument(
+        "--auth-fallback",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+
     return parser
 
 
 def main(argv: Iterable[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
+
+    if args.command == "doctor":
+        return process_doctor(
+            input_file=Path(args.input).expanduser().resolve(),
+            browser=args.browser,
+            auth_fallback=args.auth_fallback,
+            model=args.model,
+        )
+
     if args.command == "batch":
         delay_min = max(0.0, args.delay_min)
         delay_max = max(delay_min, args.delay_max)
-        media_dir = Path(args.media_dir).expanduser().resolve() if args.media_dir else None
+        media_dir = (
+            Path(args.media_dir).expanduser().resolve()
+            if args.media_dir
+            else None
+        )
+
         config = BatchConfig(
             input_file=Path(args.input).expanduser().resolve(),
             output_dir=Path(args.output).expanduser().resolve(),
@@ -446,6 +627,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             delay_max=delay_max,
         )
         return process_batch(config)
+
     return 2
 
 
