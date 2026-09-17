@@ -30,6 +30,28 @@ RATE_LIMIT_MARKERS = (
     "rate limit",
 )
 
+NON_VIDEO_POST_MARKERS = (
+    "there is no video in this post",
+    "this post does not contain a video",
+    "this post has no video",
+    "no video found in this post",
+)
+
+IMAGE_EXTENSIONS = {
+    "avif",
+    "gif",
+    "heic",
+    "jpeg",
+    "jpg",
+    "png",
+    "webp",
+}
+
+NON_VIDEO_POST_MESSAGE = (
+    "Unsupported Instagram post: this /p/ URL does not contain a video "
+    "that Reel2MD can process."
+)
+
 
 @dataclass
 class AccessResult:
@@ -96,6 +118,42 @@ def extract_urls(text: str) -> list[tuple[str, str]]:
     return items
 
 
+def is_instagram_post_url(url: str) -> bool:
+    return bool(re.search(r"https?://(?:www\.)?instagram\.com/p/", url))
+
+
+def normalize_instagram_error(url: str, detail: str, fallback: str) -> str:
+    cleaned = detail.strip()
+    if is_instagram_post_url(url):
+        lowered = cleaned.lower()
+        if any(marker in lowered for marker in NON_VIDEO_POST_MARKERS):
+            return NON_VIDEO_POST_MESSAGE
+    return cleaned or fallback
+
+
+def metadata_is_clearly_non_video(metadata: dict) -> bool:
+    ext = str(metadata.get("ext") or "").lower()
+    if ext in IMAGE_EXTENSIONS:
+        return True
+
+    formats = metadata.get("formats")
+    if isinstance(formats, list) and formats:
+        format_exts = {
+            str(item.get("ext") or "").lower()
+            for item in formats
+            if isinstance(item, dict)
+        }
+        if format_exts and format_exts.issubset(IMAGE_EXTENSIONS):
+            return True
+
+    return False
+
+
+def validate_instagram_metadata(url: str, metadata: dict) -> None:
+    if is_instagram_post_url(url) and metadata_is_clearly_non_video(metadata):
+        raise RuntimeError(NON_VIDEO_POST_MESSAGE)
+
+
 def fetch_json(url: str, browser: str, auth_fallback: bool) -> tuple[dict, str]:
     anonymous = run(
         yt_dlp_base()
@@ -103,12 +161,20 @@ def fetch_json(url: str, browser: str, auth_fallback: bool) -> tuple[dict, str]:
     )
     if anonymous.returncode == 0 and anonymous.stdout.strip():
         try:
-            return json.loads(anonymous.stdout), "anonymous"
+            metadata = json.loads(anonymous.stdout)
+            validate_instagram_metadata(url, metadata)
+            return metadata, "anonymous"
         except json.JSONDecodeError:
             pass
 
     if not auth_fallback:
-        raise RuntimeError(anonymous.stderr.strip() or "Anonymous metadata request failed")
+        raise RuntimeError(
+            normalize_instagram_error(
+                url,
+                anonymous.stderr,
+                "Anonymous metadata request failed",
+            )
+        )
 
     authenticated = run(
         yt_dlp_base()
@@ -124,14 +190,30 @@ def fetch_json(url: str, browser: str, auth_fallback: bool) -> tuple[dict, str]:
     )
     if authenticated.returncode == 0 and authenticated.stdout.strip():
         try:
-            return json.loads(authenticated.stdout), "authenticated-session"
+            metadata = json.loads(authenticated.stdout)
+            validate_instagram_metadata(url, metadata)
+            return metadata, "authenticated-session"
         except json.JSONDecodeError:
             pass
 
+    anonymous_error = normalize_instagram_error(
+        url,
+        anonymous.stderr,
+        "Anonymous metadata request failed",
+    )
+    authenticated_error = normalize_instagram_error(
+        url,
+        authenticated.stderr,
+        "Authenticated metadata request failed",
+    )
+
+    if NON_VIDEO_POST_MESSAGE in {anonymous_error, authenticated_error}:
+        raise RuntimeError(NON_VIDEO_POST_MESSAGE)
+
     raise RuntimeError(
         "Metadata request failed.\n"
-        f"Anonymous: {anonymous.stderr.strip()}\n"
-        f"Authenticated: {authenticated.stderr.strip()}"
+        f"Anonymous: {anonymous_error}\n"
+        f"Authenticated: {authenticated_error}"
     )
 
 
@@ -143,7 +225,13 @@ def resolve_media_url(url: str, browser: str, auth_fallback: bool) -> AccessResu
             return AccessResult(candidate, "anonymous")
 
     if not auth_fallback:
-        raise RuntimeError(anonymous.stderr.strip() or "Anonymous media request failed")
+        raise RuntimeError(
+            normalize_instagram_error(
+                url,
+                anonymous.stderr,
+                "Anonymous media request failed",
+            )
+        )
 
     authenticated = run(
         yt_dlp_base()
@@ -154,10 +242,24 @@ def resolve_media_url(url: str, browser: str, auth_fallback: bool) -> AccessResu
         if candidate.startswith("http"):
             return AccessResult(candidate, "authenticated-session")
 
+    anonymous_error = normalize_instagram_error(
+        url,
+        anonymous.stderr,
+        "Anonymous media request failed",
+    )
+    authenticated_error = normalize_instagram_error(
+        url,
+        authenticated.stderr,
+        "Authenticated media request failed",
+    )
+
+    if NON_VIDEO_POST_MESSAGE in {anonymous_error, authenticated_error}:
+        raise RuntimeError(NON_VIDEO_POST_MESSAGE)
+
     raise RuntimeError(
         "Media request failed.\n"
-        f"Anonymous: {anonymous.stderr.strip()}\n"
-        f"Authenticated: {authenticated.stderr.strip()}"
+        f"Anonymous: {anonymous_error}\n"
+        f"Authenticated: {authenticated_error}"
     )
 
 
