@@ -187,7 +187,9 @@ Reel2MD is intended for personal research, note-taking, and archiving content yo
 
 ## Status
 
-Pre-release alpha. The current code is being prepared for the first public alpha release.
+Public alpha `0.1.0` is available as a GitHub pre-release. Its published artifacts were clean-room built and verified end-to-end on Ubuntu with the Obsidian desktop plugin. Broader OS and environment testing is still limited.
+
+Release: https://github.com/aptoren/obsidian-reel2md/releases/tag/0.1.0
 
 ## License
 
