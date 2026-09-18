@@ -86,6 +86,19 @@ Obsidian / Git / any Markdown workflow
 
 The Obsidian plugin is deliberately thin. It starts the local CLI and does not copy Instagram cookies or credentials into the vault.
 
+## External access and data handling
+
+Reel2MD is local-first, but ingestion and model setup require explicit external access:
+
+- **Instagram** — `yt-dlp` requests metadata and media for the Instagram URLs you choose to process. Media may be served from Instagram/CDN endpoints.
+- **Hugging Face** — `faster-whisper` model metadata/files are accessed when the selected model is not already cached, and when you explicitly run the network test.
+- **Authenticated browser fallback** — off by default. If enabled, `yt-dlp` reads the selected browser's existing session only when anonymous Instagram access fails. Reel2MD does not copy browser cookie values into the vault or generated Markdown.
+- **Local processes** — the desktop plugin starts the configured `reel2md` CLI and `ffmpeg` executables on your machine.
+- **Files** — generated Markdown is written to the configured vault folder. Retained video/audio is written only when you enable retention and explicitly configure a media folder; that folder may be outside the vault.
+- **Proxy settings** — a manually entered proxy URL is stored in the plugin's local settings. Avoid embedding credentials unless you accept that local storage model.
+
+Opening the settings page runs local dependency checks only. Instagram and Hugging Face network checks run only when you explicitly choose **Test network**. Reel2MD does not implement analytics or telemetry.
+
 ## Requirements
 
 - Desktop OS supported by your Obsidian installation.
@@ -118,6 +131,8 @@ On Windows, use the equivalent virtual-environment executables under `Scripts`.
 
 ## Obsidian plugin
 
+The repository-root `manifest.json` is the manifest consumed by the Obsidian Community directory. `plugin/manifest.json` is kept byte-for-byte identical for local development and release packaging.
+
 The plugin is desktop-only because it starts a local process.
 
 From `plugin/`:
@@ -127,7 +142,7 @@ npm install
 npm run build
 ```
 
-For manual development installation, copy `manifest.json`, `main.js`, and `styles.css` into a vault plugin folder named `reel2md`.
+For manual development installation, copy `manifest.json`, `main.js`, and `styles.css` into a vault plugin folder named `reel-to-md`. The folder name should match the plugin `id` in `manifest.json`.
 
 The settings UI is grouped by workflow:
 

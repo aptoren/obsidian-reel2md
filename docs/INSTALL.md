@@ -64,7 +64,7 @@ npm run build
 Create this folder under your vault:
 
 ```text
-.obsidian/plugins/reel2md/
+.obsidian/plugins/reel-to-md/
 ```
 
 Copy these files into it:
@@ -74,6 +74,8 @@ manifest.json
 main.js
 styles.css
 ```
+
+The folder name must match the plugin ID: `reel-to-md`. For Community directory submission, the repository-root `manifest.json` is authoritative; `plugin/manifest.json` must remain identical to it.
 
 Restart Obsidian if necessary, then enable Reel2MD under Community Plugins.
 
