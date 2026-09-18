@@ -185,7 +185,7 @@ The CLI enforces the same 2–60 second range even when invoked directly.
 Run the Python regression suite from the repository root:
 
 ```bash
-python -m unittest discover -s tests -v
+PYTHONPATH=cli python3 -m unittest discover -s tests -v
 ```
 
 The regression coverage includes supported URL forms, canonicalization, deduplication, aliases, clear rejection of photo-only `/p/` posts, request-spacing clamps, retention safety, and dependency-report shape.

@@ -79,7 +79,7 @@ Restart Obsidian if necessary, then enable Reel2MD under Community Plugins.
 
 ## 4. Configure Reel2MD
 
-The settings page includes a short setup workflow and is grouped into sections.
+The settings page is grouped into the following sections.
 
 ### Source & output
 
@@ -268,5 +268,5 @@ If a `/p/` URL is a photo-only Instagram post, Reel2MD reports that the post doe
 For reproducible debugging, run the regression suite from the repository root:
 
 ```bash
-python -m unittest discover -s tests -v
+PYTHONPATH=cli python3 -m unittest discover -s tests -v
 ```
