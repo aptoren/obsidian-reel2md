@@ -4,6 +4,8 @@ Reel2MD turns supported Instagram video URLs into structured Markdown notes for 
 
 It is intentionally small and local-first: a Python CLI performs ingestion and local transcription, while an optional desktop-only Obsidian plugin provides configuration, validation, dependency checks, live job output, and a one-command queue workflow.
 
+> **New to Reel2MD?** Start with the [Beginner installation guide](#beginner-installation-guide). It walks through installation, first setup, testing, and common problems step by step.
+
 ## What it does
 
 - Reads one or many supported Instagram URLs from a Markdown/text queue.
@@ -112,6 +114,410 @@ The Python package installs these runtime dependencies:
 - `yt-dlp`
 - `faster-whisper`
 - `huggingface-hub`
+
+## Beginner installation guide
+
+If you are not a developer, use this section. You do **not** need to clone the repository or build anything from source.
+
+> **Current testing status:** Reel2MD 0.1.1 has been tested end-to-end on Ubuntu. Windows and macOS users are especially welcome to test it and report anything that behaves differently.
+
+### Step 1 — Install Python and ffmpeg
+
+Reel2MD needs:
+
+- **Python 3.10 or newer**
+- **ffmpeg**
+- the desktop version of **Obsidian**
+
+Check Python:
+
+**Windows PowerShell**
+
+```powershell
+py --version
+```
+
+**macOS / Linux**
+
+```bash
+python3 --version
+```
+
+Check ffmpeg:
+
+```bash
+ffmpeg -version
+```
+
+If ffmpeg is missing, common installation commands are:
+
+**Windows PowerShell**
+
+```powershell
+winget install Gyan.FFmpeg
+```
+
+**macOS with Homebrew**
+
+```bash
+brew install ffmpeg
+```
+
+**Ubuntu / Debian**
+
+```bash
+sudo apt update
+sudo apt install ffmpeg
+```
+
+After installing Python or ffmpeg, close and reopen Obsidian before continuing.
+
+### Step 2 — Download Reel2MD 0.1.1
+
+Open the Reel2MD 0.1.1 release page:
+
+https://github.com/aptoren/obsidian-reel2md/releases/tag/0.1.1
+
+Download these two files:
+
+```text
+reel2md-0.1.1-plugin.zip
+reel2md-0.1.1-py3-none-any.whl
+```
+
+The ZIP is the Obsidian plugin. The `.whl` file is the local Reel2MD command-line component used by the plugin.
+
+### Step 3 — Install the local Reel2MD CLI
+
+The commands below create a dedicated Reel2MD Python environment so it does not interfere with your other Python software.
+
+#### Windows PowerShell
+
+Assuming the wheel is in your Downloads folder:
+
+```powershell
+py -m venv "$HOME\.reel2md"
+& "$HOME\.reel2md\Scripts\python.exe" -m pip install --upgrade pip
+& "$HOME\.reel2md\Scripts\python.exe" -m pip install "$HOME\Downloads\reel2md-0.1.1-py3-none-any.whl"
+& "$HOME\.reel2md\Scripts\reel2md.exe" deps
+```
+
+Your Reel2MD executable is:
+
+```text
+%USERPROFILE%\.reel2md\Scripts\reel2md.exe
+```
+
+In Reel2MD settings, use the full expanded path shown by:
+
+```powershell
+Write-Output "$HOME\.reel2md\Scripts\reel2md.exe"
+```
+
+#### macOS / Linux
+
+Assuming the wheel is in your Downloads folder:
+
+```bash
+python3 -m venv "$HOME/.reel2md"
+"$HOME/.reel2md/bin/python" -m pip install --upgrade pip
+"$HOME/.reel2md/bin/python" -m pip install "$HOME/Downloads/reel2md-0.1.1-py3-none-any.whl"
+"$HOME/.reel2md/bin/reel2md" deps
+```
+
+Your Reel2MD executable is:
+
+```text
+$HOME/.reel2md/bin/reel2md
+```
+
+To print the full path for the Obsidian setting:
+
+```bash
+echo "$HOME/.reel2md/bin/reel2md"
+```
+
+A successful `reel2md deps` check reports Reel2MD, `yt-dlp`, `faster-whisper`, and `huggingface-hub`.
+
+### Step 4 — Install the Obsidian plugin
+
+1. Close Obsidian.
+2. Open your Obsidian vault folder in your file manager.
+3. Open the hidden `.obsidian` folder.
+   - On Windows, enable **View → Show → Hidden items** if needed.
+   - On macOS, press **Command + Shift + .** to show hidden files if needed.
+4. Inside `.obsidian`, open or create the `plugins` folder.
+5. Create this folder:
+
+```text
+reel-to-md
+```
+
+The final location should be:
+
+```text
+<Vault>/.obsidian/plugins/reel-to-md/
+```
+
+6. Open `reel2md-0.1.1-plugin.zip`.
+7. Copy these three files directly into the `reel-to-md` folder:
+
+```text
+main.js
+manifest.json
+styles.css
+```
+
+Do not leave them inside an extra nested folder.
+
+8. Start Obsidian.
+9. Open **Settings → Community plugins**.
+10. Enable **Reel2MD**.
+
+If Reel2MD does not appear, see **Troubleshooting** below.
+
+### Step 5 — Configure Reel2MD
+
+Open:
+
+```text
+Settings → Reel2MD
+```
+
+Start with these settings:
+
+- **Queue note** — a note containing one or more Instagram URLs.
+  - Example: `Sources/Media/Instagram-Queue.md`
+- **Output folder** — the vault folder where Reel2MD should create Markdown notes.
+- **Reel2MD executable** — paste the full executable path from Step 3.
+- **ffmpeg** — leave this as `ffmpeg` if `ffmpeg -version` worked in your terminal.
+- **Include caption** — ON
+- **Include transcript** — ON
+- **Authenticated browser fallback** — leave OFF for your first test.
+- **Keep video / Keep audio** — leave OFF for your first test.
+
+You do not need to change the other settings for a basic first run.
+
+### Step 6 — Create a test queue note
+
+Create the queue note you selected in Step 5 and place one supported Instagram URL on its own line, for example:
+
+```text
+https://www.instagram.com/reel/EXAMPLE/
+```
+
+Supported URL types are:
+
+```text
+/reel/<shortcode>
+/reels/<shortcode>
+/p/<shortcode>   (video posts only)
+/tv/<shortcode>
+```
+
+Photo-only `/p/` posts are intentionally not supported.
+
+### Step 7 — Run Test setup
+
+In **Settings → Reel2MD**, click **Test setup**.
+
+A successful result looks like:
+
+```text
+Reel2MD setup OK: queue note, CLI dependencies, ffmpeg, and local settings validated.
+```
+
+If this test fails, fix the reported item before continuing.
+
+### Step 8 — Run Test network
+
+Click **Test network**.
+
+A successful result looks similar to:
+
+```text
+Reel2MD network OK: instagram_metadata=anonymous instagram_media=anonymous huggingface=ok
+```
+
+The first Hugging Face/model access can take longer than later runs.
+
+### Step 9 — Process your first Reel
+
+Open the Command Palette and run:
+
+```text
+Process Instagram Reel queue
+```
+
+If **Show live job output** is enabled, a window shows progress while Reel2MD runs.
+
+A successful single-item job ends with:
+
+```text
+SUMMARY created=1 skipped=0 failed=0
+```
+
+Your generated Markdown note should then appear in the configured output folder.
+
+## Troubleshooting for beginners
+
+### Reel2MD does not appear in Obsidian
+
+Check all of these:
+
+- the folder is named exactly `reel-to-md`;
+- the folder is directly inside `.obsidian/plugins/`;
+- `main.js`, `manifest.json`, and `styles.css` are directly inside that folder;
+- there is no extra nested folder from the ZIP;
+- Obsidian was restarted after copying the files;
+- Community plugins are enabled in Obsidian.
+
+Correct:
+
+```text
+.obsidian/plugins/reel-to-md/manifest.json
+.obsidian/plugins/reel-to-md/main.js
+.obsidian/plugins/reel-to-md/styles.css
+```
+
+Incorrect:
+
+```text
+.obsidian/plugins/reel-to-md/reel2md-0.1.1-plugin/manifest.json
+```
+
+### Test setup says Reel2MD is missing
+
+The **Reel2MD executable** setting is probably incorrect.
+
+Use the full path:
+
+**Windows**
+
+```text
+C:\Users\<your-name>\.reel2md\Scripts\reel2md.exe
+```
+
+**macOS / Linux**
+
+```text
+/Users/<your-name>/.reel2md/bin/reel2md
+```
+
+or:
+
+```text
+/home/<your-name>/.reel2md/bin/reel2md
+```
+
+Then reopen Reel2MD settings.
+
+### The dependency checker says the CLI is outdated
+
+Install the current wheel again:
+
+**Windows PowerShell**
+
+```powershell
+& "$HOME\.reel2md\Scripts\python.exe" -m pip install --upgrade --force-reinstall "$HOME\Downloads\reel2md-0.1.1-py3-none-any.whl"
+```
+
+**macOS / Linux**
+
+```bash
+"$HOME/.reel2md/bin/python" -m pip install --upgrade --force-reinstall "$HOME/Downloads/reel2md-0.1.1-py3-none-any.whl"
+```
+
+Then restart Obsidian.
+
+### Test setup says ffmpeg is missing
+
+First check:
+
+```bash
+ffmpeg -version
+```
+
+If that fails, install ffmpeg using Step 1.
+
+If it works in your terminal but Reel2MD still cannot find it, enter the full ffmpeg path in Reel2MD settings.
+
+**macOS / Linux**
+
+```bash
+which ffmpeg
+```
+
+**Windows**
+
+```powershell
+where.exe ffmpeg
+```
+
+### Test network fails on Instagram
+
+Try these in order:
+
+1. Make sure the URL in your queue opens normally in a browser.
+2. Try a public Reel first.
+3. Check Reel2MD's **Proxy mode** if your network requires a proxy.
+4. If anonymous access fails for content your account can access, enable **Authenticated browser fallback** and select the browser where you are already logged into Instagram.
+5. Run **Test network** again.
+
+Authenticated fallback does not bypass Instagram permissions. It only uses access already available to your logged-in browser session.
+
+### Hugging Face or the Whisper model download fails
+
+Check that your network can reach Hugging Face.
+
+In Reel2MD settings, **Disable Hugging Face Xet** is enabled by default because it can improve compatibility on some networks. Leave it enabled unless you have a reason to change it.
+
+The first model download is much larger than later runs, so it can take some time.
+
+### A `/p/` Instagram URL is rejected
+
+Reel2MD accepts `/p/` URLs only when the post contains video. Photo-only posts are not supported.
+
+### The job says `skipped=1`
+
+Reel2MD deduplicates Instagram sources by shortcode. A source that has already been processed may be skipped instead of being imported again.
+
+### You enabled Keep video or Keep audio and processing is blocked
+
+When either retention option is enabled, **Media folder** is required.
+
+Either:
+
+- configure a media folder; or
+- turn **Keep video** and **Keep audio** back OFF.
+
+### You use a proxy
+
+Start with **Inherit system proxy**.
+
+If you need a manually configured HTTP/HTTPS proxy, select **Manual HTTP/HTTPS proxy** and enter the proxy URL.
+
+The plugin UI does not currently support manually configured SOCKS proxy URLs.
+
+### Still stuck?
+
+When reporting a problem, include:
+
+```text
+Operating system:
+Obsidian version:
+Reel2MD version:
+Python version:
+ffmpeg version:
+Test setup result:
+Test network result:
+Live job output / error:
+Instagram URL type: reel / reels / p / tv
+```
+
+You do not need to share private Instagram URLs or credentials.
+
+For more technical installation details, see [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Quick start: CLI
 
