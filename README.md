@@ -174,18 +174,16 @@ After installing Python or ffmpeg, close and reopen Obsidian before continuing.
 
 ### Step 2 — Download Reel2MD 0.1.1
 
-Open the Reel2MD 0.1.1 release page:
+Until Reel2MD is available in the Obsidian Community Plugins directory, installation is manual.
 
-https://github.com/aptoren/obsidian-reel2md/releases/tag/0.1.1
+Download exactly these two files:
 
-Download these two files:
-
-```text
-reel2md-0.1.1-plugin.zip
-reel2md-0.1.1-py3-none-any.whl
-```
+- [Reel2MD plugin ZIP](https://github.com/aptoren/obsidian-reel2md/releases/download/0.1.1/reel2md-0.1.1-plugin.zip)
+- [Reel2MD CLI wheel](https://github.com/aptoren/obsidian-reel2md/releases/download/0.1.1/reel2md-0.1.1-py3-none-any.whl)
 
 The ZIP is the Obsidian plugin. The `.whl` file is the local Reel2MD command-line component used by the plugin.
+
+You can also view the complete [Reel2MD 0.1.1 release](https://github.com/aptoren/obsidian-reel2md/releases/tag/0.1.1).
 
 ### Step 3 — Install the local Reel2MD CLI
 
