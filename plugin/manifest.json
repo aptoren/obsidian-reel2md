@@ -1,7 +1,7 @@
 {
   "id": "reel2md",
   "name": "Reel2MD",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "1.13.0",
   "description": "Import supported Instagram video posts into structured Markdown notes with optional local transcription.",
   "author": "aptoren",

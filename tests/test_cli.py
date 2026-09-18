@@ -1,12 +1,24 @@
 from __future__ import annotations
 
 import json
+import math
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from reel2md.cli import BatchConfig, extract_urls, fetch_json, render_note
+from reel2md.cli import (
+    MAX_DELAY_SECONDS,
+    MIN_DELAY_SECONDS,
+    BatchConfig,
+    dependency_report,
+    extract_urls,
+    fetch_json,
+    normalize_delay_max,
+    process_batch,
+    render_note,
+)
 
 
 def make_config() -> BatchConfig:
@@ -28,7 +40,6 @@ def make_config() -> BatchConfig:
         include_captured_at=True,
         include_access=True,
         include_transcript_meta=True,
-        delay_min=3.0,
         delay_max=15.0,
     )
 
@@ -174,6 +185,36 @@ class RenderNoteTests(unittest.TestCase):
 
         self.assertIn('aliases:\n  - "Fallback title from caption"', note)
         self.assertIn("# Fallback title from caption", note)
+
+
+class RequestSpacingTests(unittest.TestCase):
+    def test_delay_max_is_clamped_to_system_range(self) -> None:
+        self.assertEqual(normalize_delay_max(1.0), MIN_DELAY_SECONDS)
+        self.assertEqual(normalize_delay_max(15.0), 15.0)
+        self.assertEqual(normalize_delay_max(100.0), MAX_DELAY_SECONDS)
+
+    def test_non_finite_delay_uses_default(self) -> None:
+        self.assertEqual(normalize_delay_max(math.nan), 15.0)
+
+
+class RetentionValidationTests(unittest.TestCase):
+    def test_media_dir_is_required_when_audio_retention_is_enabled(self) -> None:
+        config = make_config()
+        config.keep_audio = True
+
+        with self.assertRaisesRegex(SystemExit, r"--media-dir is required"):
+            process_batch(config)
+
+
+class DependencyReportTests(unittest.TestCase):
+    def test_dependency_report_has_expected_keys(self) -> None:
+        report = dependency_report()
+        self.assertEqual(
+            set(report),
+            {"reel2md", "yt-dlp", "faster-whisper", "huggingface-hub"},
+        )
+        for item in report.values():
+            self.assertIn(item["status"], {"ok", "missing"})
 
 
 if __name__ == "__main__":

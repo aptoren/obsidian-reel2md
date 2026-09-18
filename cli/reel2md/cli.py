@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import re
 import shutil
@@ -11,11 +12,9 @@ import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Iterable
-
-from faster_whisper import WhisperModel
-from huggingface_hub import HfApi
 
 REEL_PATTERN = re.compile(
     r"https?://(?:www\.)?instagram\.com/(?P<kind>reels?|p|tv)/"
@@ -52,6 +51,10 @@ NON_VIDEO_POST_MESSAGE = (
     "that Reel2MD can process."
 )
 
+MIN_DELAY_SECONDS = 2.0
+DEFAULT_MAX_DELAY_SECONDS = 15.0
+MAX_DELAY_SECONDS = 60.0
+
 
 @dataclass
 class AccessResult:
@@ -78,8 +81,44 @@ class BatchConfig:
     include_captured_at: bool
     include_access: bool
     include_transcript_meta: bool
-    delay_min: float
     delay_max: float
+
+
+def installed_version(distribution: str) -> str | None:
+    try:
+        return version(distribution)
+    except PackageNotFoundError:
+        return None
+
+
+def dependency_report() -> dict[str, dict[str, str | None]]:
+    distributions = (
+        "reel2md",
+        "yt-dlp",
+        "faster-whisper",
+        "huggingface-hub",
+    )
+    report: dict[str, dict[str, str | None]] = {}
+
+    for distribution in distributions:
+        detected = installed_version(distribution)
+        report[distribution] = {
+            "status": "ok" if detected else "missing",
+            "version": detected,
+        }
+
+    return report
+
+
+def process_dependencies() -> int:
+    print(json.dumps(dependency_report(), sort_keys=True), flush=True)
+    return 0
+
+
+def normalize_delay_max(value: float) -> float:
+    if not math.isfinite(value):
+        return DEFAULT_MAX_DELAY_SECONDS
+    return min(MAX_DELAY_SECONDS, max(MIN_DELAY_SECONDS, value))
 
 
 def yt_dlp_base() -> list[str]:
@@ -317,6 +356,8 @@ def ffmpeg_keep_video(ffmpeg: str, media_url: str, output: Path) -> None:
 
 
 def transcribe(audio_path: Path, model_name: str) -> tuple[str, str, float]:
+    from faster_whisper import WhisperModel
+
     model = WhisperModel(model_name, device="cpu", compute_type="int8")
     segments, info = model.transcribe(str(audio_path), beam_size=5, vad_filter=True)
     parts = [segment.text.strip() for segment in segments if segment.text.strip()]
@@ -495,6 +536,9 @@ def process_one(code: str, url: str, config: BatchConfig) -> str:
 
 
 def process_batch(config: BatchConfig) -> int:
+    if (config.keep_video or config.keep_audio) and config.media_dir is None:
+        raise SystemExit("--media-dir is required when --keep-video or --keep-audio is enabled")
+
     if not config.input_file.is_file():
         raise SystemExit(f"Input file not found: {config.input_file}")
 
@@ -536,7 +580,7 @@ def process_batch(config: BatchConfig) -> int:
                 break
 
         if index < len(items):
-            delay = random.uniform(config.delay_min, config.delay_max)
+            delay = random.uniform(MIN_DELAY_SECONDS, config.delay_max)
             print(f"WAIT  {delay:.1f} seconds", flush=True)
             time.sleep(delay)
 
@@ -585,6 +629,8 @@ def process_doctor(
     if repo_id is None:
         print("SKIP huggingface local_model_path=true", flush=True)
     else:
+        from huggingface_hub import HfApi
+
         info = HfApi().model_info(repo_id)
         print(f"OK huggingface model={info.id}", flush=True)
 
@@ -600,6 +646,9 @@ def process_doctor(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="reel2md")
+    detected_version = installed_version("reel2md") or "unknown"
+    parser.add_argument("--version", action="version", version=f"%(prog)s {detected_version}")
+
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     batch = subparsers.add_parser(
@@ -667,8 +716,18 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
     )
-    batch.add_argument("--delay-min", type=float, default=3.0)
-    batch.add_argument("--delay-max", type=float, default=15.0)
+    batch.add_argument(
+        "--delay-min",
+        type=float,
+        default=MIN_DELAY_SECONDS,
+        help=argparse.SUPPRESS,
+    )
+    batch.add_argument(
+        "--delay-max",
+        type=float,
+        default=DEFAULT_MAX_DELAY_SECONDS,
+        help=f"Maximum random delay between jobs ({MIN_DELAY_SECONDS:.0f}-{MAX_DELAY_SECONDS:.0f} seconds)",
+    )
 
     doctor = subparsers.add_parser(
         "doctor",
@@ -683,12 +742,20 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
     )
 
+    subparsers.add_parser(
+        "deps",
+        help="Report local Reel2MD Python dependency versions as JSON",
+    )
+
     return parser
 
 
 def main(argv: Iterable[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
+
+    if args.command == "deps":
+        return process_dependencies()
 
     if args.command == "doctor":
         return process_doctor(
@@ -699,8 +766,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         )
 
     if args.command == "batch":
-        delay_min = max(0.0, args.delay_min)
-        delay_max = max(delay_min, args.delay_max)
+        delay_max = normalize_delay_max(args.delay_max)
         media_dir = (
             Path(args.media_dir).expanduser().resolve()
             if args.media_dir
@@ -725,7 +791,6 @@ def main(argv: Iterable[str] | None = None) -> int:
             include_captured_at=args.captured_at,
             include_access=args.access_meta,
             include_transcript_meta=args.transcript_meta,
-            delay_min=delay_min,
             delay_max=delay_max,
         )
         return process_batch(config)

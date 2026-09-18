@@ -1,9 +1,11 @@
-import { App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
+import { App, FileSystemAdapter, Modal, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
 import { spawn } from "child_process";
+import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
 type ProxyMode = "inherit" | "none" | "manual";
+type DependencyState = "ok" | "missing" | "outdated" | "unknown";
 
 interface Reel2MDSettings {
   queuePath: string;
@@ -24,12 +26,44 @@ interface Reel2MDSettings {
   includeCapturedAt: boolean;
   includeAccessMeta: boolean;
   includeTranscriptMeta: boolean;
-  delayMin: number;
   delayMax: number;
   proxyMode: ProxyMode;
   proxyUrl: string;
   disableHfXet: boolean;
+  showJobOutput: boolean;
 }
+
+interface DependencyItem {
+  state: DependencyState;
+  detail: string;
+  hint?: string;
+}
+
+interface LocalDependencyReport {
+  executablePath: string | null;
+  ffmpegPath: string | null;
+  reel2md: DependencyItem;
+  ffmpeg: DependencyItem;
+  ytDlp: DependencyItem;
+  fasterWhisper: DependencyItem;
+  huggingfaceHub: DependencyItem;
+}
+
+interface DependencyPayloadItem {
+  status?: string;
+  version?: string | null;
+}
+
+interface DependencyPayload {
+  reel2md?: DependencyPayloadItem;
+  "yt-dlp"?: DependencyPayloadItem;
+  "faster-whisper"?: DependencyPayloadItem;
+  "huggingface-hub"?: DependencyPayloadItem;
+}
+
+const SYSTEM_MIN_DELAY_SECONDS = 2;
+const DEFAULT_MAX_DELAY_SECONDS = 15;
+const MAX_DELAY_SECONDS = 60;
 
 const DEFAULT_SETTINGS: Reel2MDSettings = {
   queuePath: "Sources/Media/Instagram Queue.md",
@@ -50,11 +84,11 @@ const DEFAULT_SETTINGS: Reel2MDSettings = {
   includeCapturedAt: true,
   includeAccessMeta: true,
   includeTranscriptMeta: true,
-  delayMin: 3,
-  delayMax: 15,
+  delayMax: DEFAULT_MAX_DELAY_SECONDS,
   proxyMode: "inherit",
   proxyUrl: "",
-  disableHfXet: true
+  disableHfXet: true,
+  showJobOutput: false
 };
 
 function expandHome(value: string): string {
@@ -74,12 +108,117 @@ function deleteProxyVariables(env: NodeJS.ProcessEnv): void {
   delete env.all_proxy;
 }
 
+function clampMaximumDelay(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_MAX_DELAY_SECONDS;
+  return Math.min(MAX_DELAY_SECONDS, Math.max(SYSTEM_MIN_DELAY_SECONDS, Math.round(parsed)));
+}
+
+function resolveExecutablePath(command: string): string | null {
+  const expanded = expandHome(command.trim());
+  if (!expanded) return null;
+
+  const containsSeparator = expanded.includes("/") || expanded.includes("\\");
+  if (path.isAbsolute(expanded) || containsSeparator) {
+    return fs.existsSync(expanded) ? path.resolve(expanded) : null;
+  }
+
+  const pathValue = process.env.PATH ?? "";
+  const extensions = process.platform === "win32"
+    ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)
+    : [""];
+
+  for (const directory of pathValue.split(path.delimiter)) {
+    if (!directory) continue;
+    for (const extension of extensions) {
+      const candidate = path.join(directory, process.platform === "win32" ? `${expanded}${extension}` : expanded);
+      try {
+        fs.accessSync(candidate, fs.constants.X_OK);
+        return candidate;
+      } catch {
+        // Continue searching PATH.
+      }
+    }
+  }
+
+  return null;
+}
+
+function ffmpegInstallHint(): string {
+  if (process.platform === "win32") {
+    return "Install ffmpeg, for example with: winget install Gyan.FFmpeg";
+  }
+  if (process.platform === "darwin") {
+    return "Install ffmpeg, for example with: brew install ffmpeg";
+  }
+  return "Install ffmpeg with your package manager, for example on Ubuntu/Debian: sudo apt install ffmpeg";
+}
+
+function pythonDependencyItem(payload: DependencyPayloadItem | undefined, packageName: string): DependencyItem {
+  if (!payload) {
+    return {
+      state: "unknown",
+      detail: "Could not read dependency status.",
+      hint: `Reinstall or repair the Reel2MD CLI environment to restore ${packageName}.`
+    };
+  }
+
+  if (payload.status === "ok") {
+    return {
+      state: "ok",
+      detail: payload.version ? `Version ${payload.version}` : "Installed"
+    };
+  }
+
+  return {
+    state: "missing",
+    detail: "Not installed in the Reel2MD CLI environment.",
+    hint: `Reinstall or repair the Reel2MD CLI environment to install ${packageName}.`
+  };
+}
+
+class JobOutputModal extends Modal {
+  private outputEl: HTMLElement | null = null;
+  private buffer = "";
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "Reel2MD job output" });
+    contentEl.createEl("p", {
+      text: "Live output from the local Reel2MD process. You can close this window without stopping the job."
+    });
+    this.outputEl = contentEl.createEl("pre", { cls: "reel2md-job-output" });
+    this.renderBuffer();
+  }
+
+  onClose(): void {
+    this.outputEl = null;
+  }
+
+  append(text: string): void {
+    this.buffer += text;
+    if (this.buffer.length > 100000) {
+      this.buffer = this.buffer.slice(-100000);
+    }
+    this.renderBuffer();
+  }
+
+  private renderBuffer(): void {
+    if (!this.outputEl) return;
+    this.outputEl.textContent = this.buffer;
+    this.outputEl.scrollTop = this.outputEl.scrollHeight;
+  }
+}
+
 export default class Reel2MDPlugin extends Plugin {
   settings: Reel2MDSettings = DEFAULT_SETTINGS;
   private running = false;
 
   async onload(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const loaded = await this.loadData() as Partial<Reel2MDSettings> | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded ?? {});
+    this.settings.delayMax = clampMaximumDelay(this.settings.delayMax);
 
     this.addCommand({
       id: "process-queue",
@@ -104,15 +243,46 @@ export default class Reel2MDPlugin extends Plugin {
   }
 
   async saveSettings(): Promise<void> {
+    this.settings.delayMax = clampMaximumDelay(this.settings.delayMax);
     await this.saveData(this.settings);
   }
 
-  private absoluteVaultPath(relativePath: string): string {
+  private vaultRoot(): string {
     const adapter = this.app.vault.adapter;
     if (!(adapter instanceof FileSystemAdapter)) {
       throw new Error("Reel2MD requires a desktop filesystem vault.");
     }
-    return path.resolve(adapter.getBasePath(), relativePath);
+    return adapter.getBasePath();
+  }
+
+  private absoluteVaultPath(relativePath: string): string {
+    return path.resolve(this.vaultRoot(), relativePath);
+  }
+
+  private queuePathCandidates(): string[] {
+    const raw = this.settings.queuePath.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!raw) return [];
+
+    const candidates = [raw];
+    if (!raw.toLowerCase().endsWith(".md")) {
+      candidates.push(`${raw}.md`);
+    }
+    return candidates;
+  }
+
+  private resolveQueuePath(): string {
+    const candidates = this.queuePathCandidates();
+    if (candidates.length === 0) {
+      throw new Error("Set a Queue note.");
+    }
+
+    for (const candidate of candidates) {
+      if (this.app.vault.getAbstractFileByPath(candidate)) {
+        return candidate;
+      }
+    }
+
+    return candidates[candidates.length - 1];
   }
 
   private boolArg(name: string, enabled: boolean): string {
@@ -161,24 +331,35 @@ export default class Reel2MDPlugin extends Plugin {
     return env;
   }
 
-  private validateSettings(): { input: string; output: string; childEnv: NodeJS.ProcessEnv } {
-    const input = this.absoluteVaultPath(this.settings.queuePath);
-    const output = this.absoluteVaultPath(this.settings.outputFolder);
+  private validateSettings(): {
+    queueRelativePath: string;
+    input: string;
+    output: string;
+    childEnv: NodeJS.ProcessEnv;
+  } {
+    const queueRelativePath = this.resolveQueuePath();
+    const input = this.absoluteVaultPath(queueRelativePath);
+    const outputFolder = this.settings.outputFolder.trim();
+
+    if (!outputFolder) {
+      throw new Error("Set an Output folder.");
+    }
+
+    const output = this.absoluteVaultPath(outputFolder);
     const childEnv = this.buildChildEnv();
 
     if ((this.settings.keepVideo || this.settings.keepAudio) && !this.settings.mediaFolder.trim()) {
       throw new Error("Set a Media folder when Keep video or Keep audio is enabled.");
     }
 
-    if (this.settings.delayMin < 0 || this.settings.delayMax < 0) {
-      throw new Error("Request spacing values cannot be negative.");
+    if (
+      this.settings.delayMax < SYSTEM_MIN_DELAY_SECONDS ||
+      this.settings.delayMax > MAX_DELAY_SECONDS
+    ) {
+      throw new Error(`Maximum spacing must be between ${SYSTEM_MIN_DELAY_SECONDS} and ${MAX_DELAY_SECONDS} seconds.`);
     }
 
-    if (this.settings.delayMax < this.settings.delayMin) {
-      throw new Error("Maximum delay must be greater than or equal to minimum delay.");
-    }
-
-    return { input, output, childEnv };
+    return { queueRelativePath, input, output, childEnv };
   }
 
   private runCheck(
@@ -227,20 +408,114 @@ export default class Reel2MDPlugin extends Plugin {
     });
   }
 
+  private parseDependencyPayload(output: string): DependencyPayload {
+    const jsonLine = output
+      .split("\n")
+      .reverse()
+      .find((line) => line.trim().startsWith("{"));
+
+    if (!jsonLine) {
+      throw new Error("Reel2MD dependency report was not valid JSON.");
+    }
+
+    return JSON.parse(jsonLine) as DependencyPayload;
+  }
+
+  async inspectLocalDependencies(): Promise<LocalDependencyReport> {
+    const cwd = this.vaultRoot();
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    const executable = expandHome(this.settings.executable);
+    const ffmpeg = expandHome(this.settings.ffmpeg);
+    const executablePath = resolveExecutablePath(executable);
+    const ffmpegPath = resolveExecutablePath(ffmpeg);
+
+    let reel2md: DependencyItem;
+    let ytDlp: DependencyItem;
+    let fasterWhisper: DependencyItem;
+    let huggingfaceHub: DependencyItem;
+
+    try {
+      const output = await this.runCheck(executable, ["deps"], cwd, env);
+      const payload = this.parseDependencyPayload(output);
+      reel2md = pythonDependencyItem(payload.reel2md, "Reel2MD");
+      ytDlp = pythonDependencyItem(payload["yt-dlp"], "yt-dlp");
+      fasterWhisper = pythonDependencyItem(payload["faster-whisper"], "faster-whisper");
+      huggingfaceHub = pythonDependencyItem(payload["huggingface-hub"], "huggingface-hub");
+    } catch (error) {
+      const detail = String(error);
+      const depsUnsupported = executablePath !== null
+        && /invalid choice.*deps|deps.*invalid choice/i.test(detail);
+
+      if (depsUnsupported) {
+        reel2md = {
+          state: "outdated",
+          detail: "Installed CLI does not support dependency reporting.",
+          hint: "Update Reel2MD to version 0.1.1 or later, then reopen settings."
+        };
+      } else {
+        reel2md = {
+          state: "missing",
+          detail: executablePath
+            ? "The configured Reel2MD executable could not complete the local dependency check."
+            : "The configured Reel2MD executable was not found.",
+          hint: "Install or repair the Reel2MD CLI in a Python virtual environment, then set the Reel2MD executable field to that environment's reel2md command. See docs/INSTALL.md."
+        };
+      }
+
+      const unavailable: DependencyItem = {
+        state: "unknown",
+        detail: depsUnsupported
+          ? "Dependency reporting requires Reel2MD 0.1.1 or later."
+          : "Unavailable until the Reel2MD CLI can run its local dependency check.",
+        hint: "These Python dependencies are installed with the Reel2MD CLI."
+      };
+      ytDlp = { ...unavailable };
+      fasterWhisper = { ...unavailable };
+      huggingfaceHub = { ...unavailable };
+    }
+
+    let ffmpegItem: DependencyItem;
+    try {
+      const output = await this.runCheck(ffmpeg, ["-version"], cwd, env);
+      const firstLine = output.split("\n")[0]?.trim() || "ffmpeg detected";
+      ffmpegItem = {
+        state: "ok",
+        detail: firstLine
+      };
+    } catch (error) {
+      ffmpegItem = {
+        state: "missing",
+        detail: `ffmpeg check failed: ${String(error)}`,
+        hint: ffmpegInstallHint()
+      };
+    }
+
+    return {
+      executablePath,
+      ffmpegPath,
+      reel2md,
+      ffmpeg: ffmpegItem,
+      ytDlp,
+      fasterWhisper,
+      huggingfaceHub
+    };
+  }
+
   async testSetup(): Promise<void> {
+    let queueRelativePath: string;
     let input: string;
     let childEnv: NodeJS.ProcessEnv;
 
     try {
-      ({ input, childEnv } = this.validateSettings());
+      ({ queueRelativePath, input, childEnv } = this.validateSettings());
     } catch (error) {
       new Notice(`Reel2MD setup check failed: ${String(error)}`, 10000);
       return;
     }
 
-    const queueFile = this.app.vault.getAbstractFileByPath(this.settings.queuePath);
+    const queueFile = this.app.vault.getAbstractFileByPath(queueRelativePath);
     if (!queueFile) {
-      new Notice(`Reel2MD setup check failed: queue note not found: ${this.settings.queuePath}`, 10000);
+      new Notice(`Reel2MD setup check failed: queue note not found: ${queueRelativePath}`, 10000);
       return;
     }
 
@@ -251,9 +526,16 @@ export default class Reel2MDPlugin extends Plugin {
     new Notice("Reel2MD setup check started.");
 
     try {
-      await this.runCheck(executable, ["--help"], cwd, childEnv);
+      const output = await this.runCheck(executable, ["deps"], cwd, childEnv);
+      const payload = this.parseDependencyPayload(output);
+      const missing = ["reel2md", "yt-dlp", "faster-whisper", "huggingface-hub"]
+        .filter((name) => payload[name as keyof DependencyPayload]?.status !== "ok");
+
+      if (missing.length > 0) {
+        throw new Error(`Missing Python dependencies: ${missing.join(", ")}`);
+      }
     } catch (error) {
-      new Notice(`Reel2MD setup check failed: CLI: ${String(error)}`, 12000);
+      new Notice(`Reel2MD setup check failed: CLI/dependencies: ${String(error)}`, 12000);
       return;
     }
 
@@ -264,7 +546,7 @@ export default class Reel2MDPlugin extends Plugin {
       return;
     }
 
-    new Notice("Reel2MD setup OK: queue note, CLI, ffmpeg, and local settings validated.", 10000);
+    new Notice("Reel2MD setup OK: queue note, CLI dependencies, ffmpeg, and local settings validated.", 10000);
   }
 
   async testNetwork(): Promise<void> {
@@ -345,7 +627,6 @@ export default class Reel2MDPlugin extends Plugin {
       this.boolArg("captured-at", this.settings.includeCapturedAt),
       this.boolArg("access-meta", this.settings.includeAccessMeta),
       this.boolArg("transcript-meta", this.settings.includeTranscriptMeta),
-      "--delay-min", String(this.settings.delayMin),
       "--delay-max", String(this.settings.delayMax)
     ];
 
@@ -355,6 +636,15 @@ export default class Reel2MDPlugin extends Plugin {
 
     this.running = true;
     new Notice("Reel2MD started. Processing the queue in the background.");
+
+    const outputModal = this.settings.showJobOutput
+      ? new JobOutputModal(this.app)
+      : null;
+
+    if (outputModal) {
+      outputModal.open();
+      outputModal.append("Reel2MD job started.\n\n");
+    }
 
     const child = spawn(executable, args, {
       cwd: path.dirname(input),
@@ -367,18 +657,23 @@ export default class Reel2MDPlugin extends Plugin {
     let spawnFailed = false;
 
     child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
       if (stdout.length > 12000) stdout = stdout.slice(-12000);
+      outputModal?.append(text);
     });
 
     child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
       if (stderr.length > 12000) stderr = stderr.slice(-12000);
+      outputModal?.append(text);
     });
 
     child.on("error", (error) => {
       spawnFailed = true;
       this.running = false;
+      outputModal?.append(`\nCould not start Reel2MD: ${error.message}\n`);
       new Notice(`Reel2MD could not start: ${error.message}`, 10000);
     });
 
@@ -386,6 +681,8 @@ export default class Reel2MDPlugin extends Plugin {
       if (spawnFailed) return;
 
       this.running = false;
+      outputModal?.append(`\nProcess finished with exit code ${code ?? "unknown"}.\n`);
+
       if (code === 0) {
         const summary = stdout.split("\n").reverse().find((line) => line.startsWith("SUMMARY"));
         new Notice(summary ? `Reel2MD finished. ${summary}` : "Reel2MD finished.", 8000);
@@ -408,41 +705,52 @@ class Reel2MDSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+
     containerEl.createEl("h2", { text: "Reel2MD" });
     containerEl.createEl("p", {
-      text: "Reel2MD calls a local CLI. It does not store Instagram cookies or credentials in your vault."
+      text: "Reel2MD converts supported Instagram video posts into structured Markdown using a local CLI. Transcription runs locally, and Reel2MD does not copy Instagram cookies or credentials into your vault."
     });
 
-    this.textSetting("Queue note", "Vault-relative file containing Instagram video URLs.", "queuePath");
-    this.textSetting("Output folder", "Vault-relative folder for generated Markdown notes.", "outputFolder");
-    this.textSetting("Media folder", "Optional absolute folder for retained video/audio. Leave blank if media is temporary.", "mediaFolder");
-    this.textSetting("Reel2MD executable", "Executable path or command name.", "executable");
-    this.textSetting("ffmpeg", "ffmpeg executable path or command name.", "ffmpeg");
-    this.textSetting("Whisper model", "Example: small.en", "model");
-    this.textSetting("Browser", "Browser used only for authenticated fallback, e.g. firefox.", "browser");
+    containerEl.createEl("h3", { text: "Source & output" });
+    this.textSetting(
+      "Queue note",
+      "Vault-relative path to the note containing Instagram video URLs. The .md extension is optional. Example: Sources/Media/Instagram-Queue.md",
+      "queuePath"
+    );
+    this.textSetting(
+      "Output folder",
+      "Vault-relative folder where generated Markdown notes are written.",
+      "outputFolder"
+    );
 
-    new Setting(containerEl)
-      .setName("Test setup")
-      .setDesc("Validate the queue note, Reel2MD CLI, ffmpeg, proxy configuration, and local settings without processing any Instagram source.")
-      .addButton((button) => button
-        .setButtonText("Test setup")
-        .setCta()
-        .onClick(() => void this.plugin.testSetup()));
+    containerEl.createEl("h3", { text: "Processing" });
+    this.toggleSetting(
+      "Include caption",
+      "Write the Instagram caption into the Markdown note.",
+      "includeCaption"
+    );
+    this.toggleSetting(
+      "Include transcript",
+      "Create a local faster-whisper transcript.",
+      "includeTranscript",
+      true
+    );
 
-    new Setting(containerEl)
-      .setName("Test network")
-      .setDesc("Use the first Instagram URL in the queue to test Instagram metadata/media access and Hugging Face access without creating a note or saving media.")
-      .addButton((button) => button
-        .setButtonText("Test network")
-        .onClick(() => void this.plugin.testNetwork()));
+    if (this.plugin.settings.includeTranscript) {
+      this.textSetting(
+        "Whisper model",
+        "Local faster-whisper model name or model path. Example: small.en",
+        "model"
+      );
+    }
 
-    this.toggleSetting("Authenticated browser fallback", "Retry with the selected browser session if anonymous access fails.", "authFallback");
-    this.toggleSetting("Include caption", "Write the Instagram caption into the Markdown note.", "includeCaption");
-    this.toggleSetting("Include transcript", "Create a local faster-whisper transcript.", "includeTranscript");
-    this.toggleSetting("Keep video", "Keep an MP4 copy in the media folder.", "keepVideo");
-    this.toggleSetting("Keep audio", "Keep the 16 kHz mono WAV used for transcription.", "keepAudio");
+    this.toggleSetting(
+      "Show live job output",
+      "Open an Obsidian window showing live Reel2MD stdout/stderr while a queue job runs. Closing the window does not stop the job.",
+      "showJobOutput"
+    );
 
-    containerEl.createEl("h3", { text: "Metadata" });
+    containerEl.createEl("h4", { text: "Metadata" });
     this.toggleSetting("Creator", "Include creator name.", "includeCreator");
     this.toggleSetting("Creator ID", "Include creator/channel ID when available.", "includeCreatorId");
     this.toggleSetting("Published time", "Include source publication date/time when available.", "includePublishedAt");
@@ -450,7 +758,66 @@ class Reel2MDSettingTab extends PluginSettingTab {
     this.toggleSetting("Access provenance", "Include anonymous/authenticated access fields.", "includeAccessMeta");
     this.toggleSetting("Transcript metadata", "Include model, detected language, and confidence.", "includeTranscriptMeta");
 
-    containerEl.createEl("h3", { text: "Network" });
+    containerEl.createEl("h3", { text: "Media retention" });
+    this.toggleSetting(
+      "Keep video",
+      "Keep an MP4 copy instead of treating video as temporary processing media.",
+      "keepVideo",
+      true
+    );
+    this.toggleSetting(
+      "Keep audio",
+      "Keep the 16 kHz mono WAV used for transcription.",
+      "keepAudio",
+      true
+    );
+
+    if (this.plugin.settings.keepVideo || this.plugin.settings.keepAudio) {
+      this.textSetting(
+        "Media folder",
+        "Required while media retention is enabled. Use an absolute folder path for retained video/audio.",
+        "mediaFolder"
+      );
+    }
+
+    containerEl.createEl("h3", { text: "Local tools" });
+    this.textSetting(
+      "Reel2MD executable",
+      "Executable path or command name. Default: reel2md.",
+      "executable"
+    );
+    this.textSetting(
+      "ffmpeg",
+      "ffmpeg executable path or command name. Default: ffmpeg.",
+      "ffmpeg"
+    );
+
+    const dependencyStatus = containerEl.createDiv({ cls: "reel2md-dependency-status" });
+    dependencyStatus.setText("Checking local dependencies…");
+    void this.refreshDependencyStatus(dependencyStatus);
+
+    new Setting(containerEl)
+      .setName("Test setup")
+      .setDesc("Validate the queue note, Reel2MD CLI and Python dependencies, ffmpeg, proxy configuration, retention settings, and request spacing without processing Instagram media.")
+      .addButton((button) => button
+        .setButtonText("Test setup")
+        .onClick(() => void this.plugin.testSetup()));
+
+    containerEl.createEl("h3", { text: "Network & access" });
+    this.toggleSetting(
+      "Authenticated browser fallback",
+      "Retry with the selected browser session only if anonymous Instagram access fails.",
+      "authFallback",
+      true
+    );
+
+    if (this.plugin.settings.authFallback) {
+      this.textSetting(
+        "Browser",
+        "Browser whose existing logged-in session may be used for fallback. Example: firefox.",
+        "browser"
+      );
+    }
 
     new Setting(containerEl)
       .setName("Proxy mode")
@@ -463,13 +830,16 @@ class Reel2MDSettingTab extends PluginSettingTab {
         .onChange(async (value) => {
           this.plugin.settings.proxyMode = value as ProxyMode;
           await this.plugin.saveSettings();
+          this.display();
         }));
 
-    this.textSetting(
-      "Proxy URL",
-      "Used only in Manual mode. Example: http://192.168.159.1:10808. Avoid embedding credentials unless you accept that the value is stored in plugin settings.",
-      "proxyUrl"
-    );
+    if (this.plugin.settings.proxyMode === "manual") {
+      this.textSetting(
+        "Proxy URL",
+        "Used only in Manual mode. Example: http://192.168.159.1:10808. Avoid embedding credentials unless you accept that the value is stored in plugin settings.",
+        "proxyUrl"
+      );
+    }
 
     this.toggleSetting(
       "Disable Hugging Face Xet",
@@ -477,9 +847,86 @@ class Reel2MDSettingTab extends PluginSettingTab {
       "disableHfXet"
     );
 
+    new Setting(containerEl)
+      .setName("Test network")
+      .setDesc("Use the first supported Instagram URL in the queue to test Instagram metadata/media access and Hugging Face model access without creating a note or saving media.")
+      .addButton((button) => button
+        .setButtonText("Test network")
+        .onClick(() => void this.plugin.testNetwork()));
+
     containerEl.createEl("h3", { text: "Request spacing" });
-    this.numberSetting("Minimum delay (seconds)", "Minimum pause between Instagram jobs.", "delayMin");
-    this.numberSetting("Maximum delay (seconds)", "Maximum pause between Instagram jobs.", "delayMax");
+    new Setting(containerEl)
+      .setName("Maximum spacing")
+      .setDesc(`Reel2MD waits a random number of seconds between jobs. The minimum is always ${SYSTEM_MIN_DELAY_SECONDS} seconds; the maximum is the value you choose here.`)
+      .addDropdown((dropdown) => {
+        for (let value = SYSTEM_MIN_DELAY_SECONDS; value <= MAX_DELAY_SECONDS; value += 1) {
+          dropdown.addOption(String(value), `${value} seconds`);
+        }
+        dropdown
+          .setValue(String(clampMaximumDelay(this.plugin.settings.delayMax)))
+          .onChange(async (value) => {
+            this.plugin.settings.delayMax = clampMaximumDelay(value);
+            await this.plugin.saveSettings();
+          });
+      });
+  }
+
+  private async refreshDependencyStatus(statusEl: HTMLElement): Promise<void> {
+    const report = await this.plugin.inspectLocalDependencies();
+    if (!statusEl.isConnected) return;
+
+    statusEl.empty();
+    statusEl.createEl("div", {
+      cls: "reel2md-dependency-heading",
+      text: "Detected local dependencies"
+    });
+
+    const list = statusEl.createEl("ul");
+    this.renderDependencyItem(
+      list,
+      "Reel2MD CLI",
+      report.reel2md,
+      report.executablePath ? `Detected executable: ${report.executablePath}` : undefined
+    );
+    this.renderDependencyItem(
+      list,
+      "ffmpeg",
+      report.ffmpeg,
+      report.ffmpegPath ? `Detected executable: ${report.ffmpegPath}` : undefined
+    );
+    this.renderDependencyItem(list, "yt-dlp", report.ytDlp);
+    this.renderDependencyItem(list, "faster-whisper", report.fasterWhisper);
+    this.renderDependencyItem(list, "huggingface-hub", report.huggingfaceHub);
+  }
+
+  private renderDependencyItem(
+    list: HTMLElement,
+    name: string,
+    item: DependencyItem,
+    detectedPath?: string
+  ): void {
+    const row = list.createEl("li", { cls: "reel2md-dependency-item" });
+    const state = row.createSpan({
+      cls: `reel2md-dependency-${item.state}`,
+      text: item.state === "ok"
+        ? "OK"
+        : item.state === "missing"
+          ? "Missing"
+          : item.state === "outdated"
+            ? "Outdated"
+            : "Unknown"
+    });
+    state.setAttr("aria-label", `${name} status: ${state.textContent ?? item.state}`);
+
+    row.createSpan({ text: ` — ${name}: ${item.detail}` });
+
+    if (detectedPath) {
+      row.createEl("div", { cls: "reel2md-dependency-detail", text: detectedPath });
+    }
+
+    if (item.hint) {
+      row.createEl("div", { cls: "reel2md-dependency-hint", text: item.hint });
+    }
   }
 
   private textSetting(name: string, desc: string, key: keyof Reel2MDSettings): void {
@@ -494,7 +941,12 @@ class Reel2MDSettingTab extends PluginSettingTab {
         }));
   }
 
-  private toggleSetting(name: string, desc: string, key: keyof Reel2MDSettings): void {
+  private toggleSetting(
+    name: string,
+    desc: string,
+    key: keyof Reel2MDSettings,
+    redisplay = false
+  ): void {
     new Setting(this.containerEl)
       .setName(name)
       .setDesc(desc)
@@ -503,21 +955,7 @@ class Reel2MDSettingTab extends PluginSettingTab {
         .onChange(async (value) => {
           (this.plugin.settings as unknown as Record<string, unknown>)[key] = value;
           await this.plugin.saveSettings();
-        }));
-  }
-
-  private numberSetting(name: string, desc: string, key: "delayMin" | "delayMax"): void {
-    new Setting(this.containerEl)
-      .setName(name)
-      .setDesc(desc)
-      .addText((text) => text
-        .setValue(String(this.plugin.settings[key]))
-        .onChange(async (value) => {
-          const parsed = Number(value);
-          if (Number.isFinite(parsed) && parsed >= 0) {
-            this.plugin.settings[key] = parsed;
-            await this.plugin.saveSettings();
-          }
+          if (redisplay) this.display();
         }));
   }
 }

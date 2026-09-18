@@ -13,7 +13,13 @@ Install `ffmpeg` using your operating-system package manager and verify:
 ffmpeg -version
 ```
 
-If `ffmpeg` is not on `PATH`, the plugin can be configured with its full executable path.
+Examples:
+
+- Ubuntu/Debian: `sudo apt install ffmpeg`
+- macOS with Homebrew: `brew install ffmpeg`
+- Windows with winget: `winget install Gyan.FFmpeg`
+
+If `ffmpeg` is not on `PATH`, configure the plugin with its full executable path.
 
 ## 2. Install the CLI
 
@@ -25,6 +31,7 @@ Clone or download this repository first.
 python3 -m venv ~/.reel2md
 ~/.reel2md/bin/pip install --upgrade pip
 ~/.reel2md/bin/pip install -e ./cli
+~/.reel2md/bin/reel2md deps
 ~/.reel2md/bin/reel2md --help
 ```
 
@@ -34,10 +41,13 @@ python3 -m venv ~/.reel2md
 py -m venv $HOME\.reel2md
 & $HOME\.reel2md\Scripts\pip.exe install --upgrade pip
 & $HOME\.reel2md\Scripts\pip.exe install -e .\cli
+& $HOME\.reel2md\Scripts\reel2md.exe deps
 & $HOME\.reel2md\Scripts\reel2md.exe --help
 ```
 
 The CLI installs `yt-dlp`, `faster-whisper`, and `huggingface-hub`.
+
+`reel2md deps` is a local, non-network dependency check. If one of those Python packages is missing, reinstall or repair the Reel2MD CLI environment.
 
 The first transcription downloads the configured faster-whisper model if it is not already cached.
 
@@ -69,19 +79,14 @@ Restart Obsidian if necessary, then enable Reel2MD under Community Plugins.
 
 ## 4. Configure Reel2MD
 
-Recommended first-pass settings:
+The settings page includes a short setup workflow and is grouped into sections.
 
-- **Queue note** — vault-relative Markdown/text file containing Instagram URLs.
+### Source & output
+
+- **Queue note** — vault-relative note containing supported Instagram URLs.
+  - `.md` is optional.
+  - Example: `Sources/Media/Instagram-Queue.md`
 - **Output folder** — vault-relative folder for generated Markdown notes.
-- **Reel2MD executable** — full path to the CLI executable if it is not already on `PATH`.
-- **ffmpeg** — `ffmpeg` or its full executable path.
-- **Whisper model** — `small.en` is the current default.
-- **Browser** — browser used only if authenticated fallback is enabled.
-- **Authenticated browser fallback** — off by default.
-- **Include caption** — on by default.
-- **Include transcript** — on by default.
-- **Keep video / Keep audio** — off by default.
-- **Media folder** — required only when retained media is enabled.
 
 Supported Instagram URL paths are:
 
@@ -94,49 +99,78 @@ Supported Instagram URL paths are:
 
 `/p/` sources must contain video media. Photo-only posts are not processed.
 
+### Processing
+
+- **Include caption** — on by default.
+- **Include transcript** — on by default.
+- **Whisper model** — shown only when transcription is enabled; `small.en` is the default.
+- **Show live job output** — optionally opens an Obsidian window with live CLI stdout/stderr while a queue job is running.
+- Metadata toggles control creator, publication time, capture time, access provenance, and transcript metadata.
+
+Closing the live-output window does not stop the running job.
+
+### Media retention
+
+- **Keep video** — off by default.
+- **Keep audio** — off by default.
+- **Media folder** — shown only when either retention option is enabled.
+
+A media folder is mandatory while retention is enabled. Both the plugin and direct CLI usage enforce this guard.
+
+### Local tools
+
+- **Reel2MD executable** — `reel2md` or a full executable path.
+- **ffmpeg** — `ffmpeg` or a full executable path.
+
+When the settings page opens, Reel2MD performs local, non-network checks for:
+
+- Reel2MD CLI;
+- `ffmpeg`;
+- `yt-dlp`;
+- `faster-whisper`;
+- `huggingface-hub`.
+
+Detected versions/status are shown in the settings page. When a dependency is unavailable, a short install or repair hint is shown next to it.
+
+The configured command values remain portable (`reel2md`, `ffmpeg`) when they already resolve through `PATH`; the UI may also show the detected executable path.
+
 ## 5. Configure network behavior
 
-Reel2MD provides three proxy modes in plugin settings.
+### Authenticated fallback
 
-### Inherit system proxy
+**Authenticated browser fallback** is off by default. The Browser field is shown only when fallback is enabled.
 
-Uses the environment inherited by Obsidian/Reel2MD.
+If anonymous Instagram access fails and fallback is enabled, Reel2MD asks `yt-dlp` to use the selected browser session. Reel2MD does not copy those cookies into the vault or generated notes.
 
-### No proxy
+### Proxy modes
 
-Removes these standard proxy variables for Reel2MD child processes:
+Reel2MD provides three proxy modes:
+
+- **Inherit system proxy**
+- **No proxy**
+- **Manual HTTP/HTTPS proxy**
+
+The Proxy URL field is shown only in Manual mode.
+
+Manual mode applies the configured URL to:
 
 ```text
 HTTP_PROXY
 HTTPS_PROXY
-ALL_PROXY
 http_proxy
 https_proxy
+```
+
+and removes:
+
+```text
+ALL_PROXY
 all_proxy
 ```
 
-### Manual HTTP/HTTPS proxy
+The plugin UI does not currently support manual SOCKS proxy URLs.
 
-Provide one proxy URL, for example:
-
-```text
-http://127.0.0.1:8080
-```
-
-Reel2MD applies it to:
-
-```text
-HTTP_PROXY
-HTTPS_PROXY
-http_proxy
-https_proxy
-```
-
-and removes `ALL_PROXY` / `all_proxy` so an inherited SOCKS proxy does not override the explicit HTTP/HTTPS configuration.
-
-The plugin's manual proxy mode currently supports `http://` and `https://` proxy URLs, not SOCKS URLs.
-
-Proxy values are stored in the plugin's local settings. Avoid embedding sensitive credentials unless you accept that they will be stored there.
+Proxy values are stored in the plugin's local settings. Avoid embedding sensitive credentials unless you accept that storage model.
 
 ### Hugging Face Xet
 
@@ -148,28 +182,11 @@ HF_HUB_DISABLE_XET=1
 
 for Reel2MD child processes.
 
-This can improve compatibility on networks where Hugging Face Xet/CAS downloads fail. It can be disabled when unnecessary.
+This can improve compatibility on networks where Hugging Face Xet/CAS downloads fail.
 
-## 6. Validate the installation
+### Test network
 
-In Reel2MD settings, run **Test setup** first.
-
-It validates:
-
-- queue note existence;
-- Reel2MD CLI execution;
-- `ffmpeg`;
-- proxy configuration;
-- media-retention settings;
-- request-spacing values.
-
-A successful result reports:
-
-```text
-Reel2MD setup OK: queue note, CLI, ffmpeg, and local settings validated.
-```
-
-Then run **Test network**.
+**Test network** is located at the end of the Network & access section.
 
 It uses the first supported Instagram URL in the queue and checks:
 
@@ -177,7 +194,38 @@ It uses the first supported Instagram URL in the queue and checks:
 - Instagram media URL access;
 - Hugging Face model access.
 
-It does not create a Markdown note or save media.
+It does not create a Markdown note or save media. Network tests are not run automatically when the settings page opens.
+
+## 6. Configure request spacing
+
+The minimum spacing is a system value fixed at **2 seconds**.
+
+Choose **Maximum spacing** from a dropdown containing values from **2 to 60 seconds**.
+
+Between jobs, Reel2MD randomly chooses a wait time between 2 seconds and the configured maximum. For example, a maximum of 15 means each inter-job delay is randomly selected from 2–15 seconds.
+
+The CLI applies the same limits even when used directly.
+
+## 7. Validate the installation
+
+Run **Test setup** first.
+
+It validates:
+
+- queue note resolution, including paths entered without `.md`;
+- Reel2MD CLI and Python dependency status;
+- `ffmpeg`;
+- proxy configuration;
+- media-retention settings;
+- request-spacing settings.
+
+A successful result reports:
+
+```text
+Reel2MD setup OK: queue note, CLI dependencies, ffmpeg, and local settings validated.
+```
+
+Then run **Test network**.
 
 A successful result reports a summary similar to:
 
@@ -185,7 +233,7 @@ A successful result reports a summary similar to:
 Reel2MD network OK: instagram_metadata=anonymous instagram_media=anonymous huggingface=ok
 ```
 
-## 7. Process the queue
+## 8. Process the queue
 
 Use the Reel2MD ribbon command or Command Palette action:
 
@@ -197,15 +245,21 @@ Generated Markdown notes are written to the configured output folder.
 
 The filename remains tied to the Instagram source ID, while the human-readable title is also written to the Obsidian `aliases` property.
 
-## Authenticated fallback
+If **Show live job output** is enabled, an Obsidian window displays progress such as:
 
-If anonymous Instagram access fails and **Authenticated browser fallback** is enabled, Reel2MD asks `yt-dlp` to use the selected browser session.
-
-Reel2MD does not copy those cookies into the vault or generated notes. This does not bypass access controls.
+```text
+Found: 2 unique Instagram URL(s)
+[1/2] ABC123
+OK
+WAIT 8.4 seconds
+[2/2] XYZ789
+OK
+SUMMARY created=2 skipped=0 failed=0
+```
 
 ## Troubleshooting
 
-If **Test setup** fails, fix the local executable/path/configuration error first.
+If **Test setup** fails, use the local dependency status and hint shown under **Local tools** first.
 
 If **Test network** fails, inspect the reported Instagram or Hugging Face error and verify the selected proxy mode.
 

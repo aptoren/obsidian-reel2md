@@ -3,3 +3,65 @@
   font-family: var(--font-monospace);
   font-size: var(--font-ui-smaller);
 }
+
+.reel2md-dependency-status {
+  margin: var(--size-4-2) 0 var(--size-4-3);
+  padding: var(--size-4-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  font-size: var(--font-ui-smaller);
+}
+
+.reel2md-dependency-heading {
+  margin-bottom: var(--size-2-2);
+  font-weight: var(--font-semibold);
+}
+
+.reel2md-dependency-status ul {
+  margin: 0;
+  padding-inline-start: var(--size-4-5);
+}
+
+.reel2md-dependency-item {
+  margin-bottom: var(--size-2-2);
+}
+
+.reel2md-dependency-ok {
+  color: var(--text-success);
+  font-weight: var(--font-semibold);
+}
+
+.reel2md-dependency-missing {
+  color: var(--text-error);
+  font-weight: var(--font-semibold);
+}
+
+.reel2md-dependency-outdated {
+  color: var(--text-warning);
+  font-weight: var(--font-semibold);
+}
+
+.reel2md-dependency-unknown {
+  color: var(--text-muted);
+  font-weight: var(--font-semibold);
+}
+
+.reel2md-dependency-detail,
+.reel2md-dependency-hint {
+  margin-top: var(--size-2-1);
+  color: var(--text-muted);
+}
+
+.reel2md-job-output {
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: var(--size-4-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-primary-alt);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}
