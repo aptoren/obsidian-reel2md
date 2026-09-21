@@ -1,5 +1,5 @@
-import { App, FileSystemAdapter, Modal, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
-import { spawn } from "child_process";
+import { App, FileSystemAdapter, Modal, Notice, Plugin, PluginSettingTab, Setting, normalizePath } from "obsidian";
+import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -214,6 +214,8 @@ class JobOutputModal extends Modal {
 export default class Reel2MDPlugin extends Plugin {
   settings: Reel2MDSettings = DEFAULT_SETTINGS;
   private running = false;
+  private unloading = false;
+  private childProcesses = new Set<ChildProcessWithoutNullStreams>();
 
   async onload(): Promise<void> {
     const loaded = await this.loadData() as Partial<Reel2MDSettings> | null;
@@ -242,6 +244,24 @@ export default class Reel2MDPlugin extends Plugin {
     this.addSettingTab(new Reel2MDSettingTab(this.app, this));
   }
 
+  onunload(): void {
+    this.unloading = true;
+    for (const child of this.childProcesses) {
+      if (!child.killed) {
+        child.kill();
+      }
+    }
+    this.childProcesses.clear();
+    this.running = false;
+  }
+
+  private trackChild(child: ChildProcessWithoutNullStreams): void {
+    this.childProcesses.add(child);
+    const cleanup = () => this.childProcesses.delete(child);
+    child.once("close", cleanup);
+    child.once("error", cleanup);
+  }
+
   async saveSettings(): Promise<void> {
     this.settings.delayMax = clampMaximumDelay(this.settings.delayMax);
     await this.saveData(this.settings);
@@ -260,7 +280,10 @@ export default class Reel2MDPlugin extends Plugin {
   }
 
   private queuePathCandidates(): string[] {
-    const raw = this.settings.queuePath.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+    const input = this.settings.queuePath.trim();
+    if (!input) return [];
+
+    const raw = normalizePath(input).replace(/^\/+/, "");
     if (!raw) return [];
 
     const candidates = [raw];
@@ -339,7 +362,10 @@ export default class Reel2MDPlugin extends Plugin {
   } {
     const queueRelativePath = this.resolveQueuePath();
     const input = this.absoluteVaultPath(queueRelativePath);
-    const outputFolder = this.settings.outputFolder.trim();
+    const outputFolderInput = this.settings.outputFolder.trim();
+    const outputFolder = outputFolderInput
+      ? normalizePath(outputFolderInput).replace(/^\/+/, "")
+      : "";
 
     if (!outputFolder) {
       throw new Error("Set an Output folder.");
@@ -374,6 +400,7 @@ export default class Reel2MDPlugin extends Plugin {
         env,
         windowsHide: true
       });
+      this.trackChild(child);
 
       let stdout = "";
       let stderr = "";
@@ -651,6 +678,7 @@ export default class Reel2MDPlugin extends Plugin {
       env: childEnv,
       windowsHide: true
     });
+    this.trackChild(child);
 
     let stdout = "";
     let stderr = "";
@@ -673,6 +701,7 @@ export default class Reel2MDPlugin extends Plugin {
     child.on("error", (error) => {
       spawnFailed = true;
       this.running = false;
+      if (this.unloading) return;
       outputModal?.append(`\nCould not start Reel2MD: ${error.message}\n`);
       new Notice(`Reel2MD could not start: ${error.message}`, 10000);
     });
@@ -681,6 +710,7 @@ export default class Reel2MDPlugin extends Plugin {
       if (spawnFailed) return;
 
       this.running = false;
+      if (this.unloading) return;
       outputModal?.append(`\nProcess finished with exit code ${code ?? "unknown"}.\n`);
 
       if (code === 0) {
@@ -706,12 +736,11 @@ class Reel2MDSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Reel2MD" });
     containerEl.createEl("p", {
       text: "Reel2MD converts supported Instagram video posts into structured Markdown using a local CLI. Transcription runs locally, and Reel2MD does not copy Instagram cookies or credentials into your vault."
     });
 
-    containerEl.createEl("h3", { text: "Source & output" });
+    this.heading("Source & output");
     this.textSetting(
       "Queue note",
       "Vault-relative path to the note containing Instagram video URLs. The .md extension is optional. Example: Sources/Media/Instagram-Queue.md",
@@ -723,7 +752,7 @@ class Reel2MDSettingTab extends PluginSettingTab {
       "outputFolder"
     );
 
-    containerEl.createEl("h3", { text: "Processing" });
+    this.heading("Processing");
     this.toggleSetting(
       "Include caption",
       "Write the Instagram caption into the Markdown note.",
@@ -750,7 +779,7 @@ class Reel2MDSettingTab extends PluginSettingTab {
       "showJobOutput"
     );
 
-    containerEl.createEl("h4", { text: "Metadata" });
+    this.heading("Metadata");
     this.toggleSetting("Creator", "Include creator name.", "includeCreator");
     this.toggleSetting("Creator ID", "Include creator/channel ID when available.", "includeCreatorId");
     this.toggleSetting("Published time", "Include source publication date/time when available.", "includePublishedAt");
@@ -758,7 +787,7 @@ class Reel2MDSettingTab extends PluginSettingTab {
     this.toggleSetting("Access provenance", "Include anonymous/authenticated access fields.", "includeAccessMeta");
     this.toggleSetting("Transcript metadata", "Include model, detected language, and confidence.", "includeTranscriptMeta");
 
-    containerEl.createEl("h3", { text: "Media retention" });
+    this.heading("Media retention");
     this.toggleSetting(
       "Keep video",
       "Keep an MP4 copy instead of treating video as temporary processing media.",
@@ -780,7 +809,7 @@ class Reel2MDSettingTab extends PluginSettingTab {
       );
     }
 
-    containerEl.createEl("h3", { text: "Local tools" });
+    this.heading("Local tools");
     this.textSetting(
       "Reel2MD executable",
       "Executable path or command name. Default: reel2md.",
@@ -803,7 +832,7 @@ class Reel2MDSettingTab extends PluginSettingTab {
         .setButtonText("Test setup")
         .onClick(() => void this.plugin.testSetup()));
 
-    containerEl.createEl("h3", { text: "Network & access" });
+    this.heading("Network & access");
     this.toggleSetting(
       "Authenticated browser fallback",
       "Retry with the selected browser session only if anonymous Instagram access fails.",
@@ -854,7 +883,7 @@ class Reel2MDSettingTab extends PluginSettingTab {
         .setButtonText("Test network")
         .onClick(() => void this.plugin.testNetwork()));
 
-    containerEl.createEl("h3", { text: "Request spacing" });
+    this.heading("Request spacing");
     new Setting(containerEl)
       .setName("Maximum spacing")
       .setDesc(`Reel2MD waits a random number of seconds between jobs. The minimum is always ${SYSTEM_MIN_DELAY_SECONDS} seconds; the maximum is the value you choose here.`)
@@ -927,6 +956,12 @@ class Reel2MDSettingTab extends PluginSettingTab {
     if (item.hint) {
       row.createEl("div", { cls: "reel2md-dependency-hint", text: item.hint });
     }
+  }
+
+  private heading(name: string): void {
+    new Setting(this.containerEl)
+      .setName(name)
+      .setHeading();
   }
 
   private textSetting(name: string, desc: string, key: keyof Reel2MDSettings): void {
