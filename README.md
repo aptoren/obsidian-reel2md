@@ -15,6 +15,7 @@ It is intentionally small and local-first: a Python CLI performs ingestion and l
 - Optionally falls back to a logged-in browser session for content that the same account is allowed to access.
 - Resolves the media stream without requiring a permanent video download.
 - Creates temporary 16 kHz mono audio for local transcription with `faster-whisper`.
+- Supports both English-only transcription (`small.en`) and multilingual transcription (`small`); multilingual mode automatically detects the spoken language.
 - Optionally keeps the video and/or transcription audio in an explicitly configured media folder.
 - Writes one structured Markdown note per source.
 - Stores the human-readable source title as an Obsidian `aliases` property while keeping the filename tied to the stable source ID.
@@ -44,7 +45,7 @@ media_access: "anonymous"
 caption_status: fetched
 caption_method: yt-dlp
 transcript_status: completed
-transcript_method: "faster-whisper-small.en"
+transcript_method: "faster-whisper-small"
 transcript_language: "en"
 transcript_language_probability: 0.998
 tags:
@@ -291,6 +292,10 @@ Start with these settings:
 - **ffmpeg** — leave this as `ffmpeg` if `ffmpeg -version` worked in your terminal.
 - **Include caption** — ON
 - **Include transcript** — ON
+- **Transcription model** — choose:
+  - **Multilingual / auto-detect (`small`)** if Reels may contain different spoken languages. This is the default.
+  - **English only (`small.en`)** if you expect English speech only.
+  - The selected model is downloaded on the first transcription if it is not already cached.
 - **Authenticated browser fallback** — leave OFF for your first test.
 - **Keep video / Keep audio** — leave OFF for your first test.
 
@@ -470,7 +475,7 @@ Check that your network can reach Hugging Face.
 
 In Reel2MD settings, **Disable Hugging Face Xet** is enabled by default because it can improve compatibility on some networks. Leave it enabled unless you have a reason to change it.
 
-The first model download is much larger than later runs, so it can take some time.
+The first download of a selected model can take some time. Switching between **English only (`small.en`)** and **Multilingual / auto-detect (`small`)** uses a different model, so the newly selected model may need to download once before transcription can start.
 
 ### A `/p/` Instagram URL is rejected
 
@@ -551,7 +556,7 @@ For manual development installation, copy `manifest.json`, `main.js`, and `style
 The settings UI is grouped by workflow:
 
 - **Source & output** — queue note and output folder. Queue paths accept the `.md` extension or omit it.
-- **Processing** — caption/transcript behavior, Whisper model, metadata, and optional live job output.
+- **Processing** — caption/transcript behavior, a single transcription-model selector (English-only `small.en` or multilingual auto-detect `small`), metadata, and optional live job output.
 - **Media retention** — keep video/audio; the media-folder field only appears when retention is enabled.
 - **Local tools** — Reel2MD CLI and `ffmpeg`, with automatic local dependency status and install/repair hints.
 - **Network & access** — authenticated fallback, conditional browser/proxy fields, Hugging Face Xet behavior, and **Test network**.

@@ -6,6 +6,7 @@ import * as os from "os";
 import * as path from "path";
 
 type ProxyMode = "inherit" | "none" | "manual";
+type TranscriptionModel = "small.en" | "small";
 type DependencyState = "ok" | "missing" | "outdated" | "unknown";
 
 interface Reel2MDSettings {
@@ -14,7 +15,7 @@ interface Reel2MDSettings {
   mediaFolder: string;
   executable: string;
   ffmpeg: string;
-  model: string;
+  model: TranscriptionModel;
   authFallback: boolean;
   browser: string;
   includeCaption: boolean;
@@ -72,7 +73,7 @@ const DEFAULT_SETTINGS: Reel2MDSettings = {
   mediaFolder: "",
   executable: "reel2md",
   ffmpeg: "ffmpeg",
-  model: "small.en",
+  model: "small",
   authFallback: false,
   browser: "firefox",
   includeCaption: true,
@@ -113,6 +114,10 @@ function clampMaximumDelay(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return DEFAULT_MAX_DELAY_SECONDS;
   return Math.min(MAX_DELAY_SECONDS, Math.max(SYSTEM_MIN_DELAY_SECONDS, Math.round(parsed)));
+}
+
+function normalizeTranscriptionModel(value: unknown): TranscriptionModel {
+  return value === "small.en" ? "small.en" : "small";
 }
 
 function resolveExecutablePath(command: string): string | null {
@@ -221,6 +226,7 @@ export default class Reel2MDPlugin extends Plugin {
   async onload(): Promise<void> {
     const loaded = await this.loadData() as Partial<Reel2MDSettings> | null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded ?? {});
+    this.settings.model = normalizeTranscriptionModel(this.settings.model);
     this.settings.delayMax = clampMaximumDelay(this.settings.delayMax);
 
     this.addCommand({
@@ -738,7 +744,8 @@ class Reel2MDSettingTab extends PluginSettingTab {
   }
 
   async setControlValue(key: string, value: unknown): Promise<void> {
-    (this.plugin.settings as unknown as Record<string, unknown>)[key] = value;
+    const nextValue = key === "model" ? normalizeTranscriptionModel(value) : value;
+    (this.plugin.settings as unknown as Record<string, unknown>)[key] = nextValue;
     await this.plugin.saveSettings();
 
     if (
@@ -800,10 +807,17 @@ class Reel2MDSettingTab extends PluginSettingTab {
             control: { type: "toggle", key: "includeTranscript" }
           },
           {
-            name: "Whisper model",
-            desc: "Local faster-whisper model name or model path. Example: small.en",
+            name: "Transcription model",
+            desc: "Choose English only for English speech, or Multilingual when Reels may contain other spoken languages. Multilingual lets Whisper detect the spoken language automatically. The selected model downloads on first transcription if it is not already cached.",
             visible: () => this.plugin.settings.includeTranscript,
-            control: { type: "text", key: "model" }
+            control: {
+              type: "dropdown",
+              key: "model",
+              options: {
+                "small.en": "English only (small.en)",
+                small: "Multilingual / auto-detect (small)"
+              }
+            }
           },
           {
             name: "Show live job output",

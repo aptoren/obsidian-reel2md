@@ -12,6 +12,7 @@ from reel2md.cli import (
     MAX_DELAY_SECONDS,
     MIN_DELAY_SECONDS,
     BatchConfig,
+    build_parser,
     dependency_report,
     extract_urls,
     fetch_json,
@@ -185,6 +186,18 @@ class RenderNoteTests(unittest.TestCase):
 
         self.assertIn('aliases:\n  - "Fallback title from caption"', note)
         self.assertIn("# Fallback title from caption", note)
+
+
+class ModelDefaultsTests(unittest.TestCase):
+    def test_batch_defaults_to_multilingual_small(self) -> None:
+        args = build_parser().parse_args(
+            ["batch", "--input", "input.md", "--output", "output"]
+        )
+        self.assertEqual(args.model, "small")
+
+    def test_doctor_defaults_to_multilingual_small(self) -> None:
+        args = build_parser().parse_args(["doctor", "--input", "input.md"])
+        self.assertEqual(args.model, "small")
 
 
 class RequestSpacingTests(unittest.TestCase):

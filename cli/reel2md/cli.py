@@ -659,7 +659,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--output", required=True)
     batch.add_argument("--media-dir")
     batch.add_argument("--ffmpeg", default="ffmpeg")
-    batch.add_argument("--model", default="small.en")
+    batch.add_argument("--model", default="small")
     batch.add_argument("--browser", default="firefox")
     batch.add_argument(
         "--auth-fallback",
@@ -734,7 +734,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Test Instagram and Hugging Face network access without ingesting media",
     )
     doctor.add_argument("--input", required=True)
-    doctor.add_argument("--model", default="small.en")
+    doctor.add_argument("--model", default="small")
     doctor.add_argument("--browser", default="firefox")
     doctor.add_argument(
         "--auth-fallback",
