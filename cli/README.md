@@ -12,6 +12,8 @@ The CLI exposes:
 
 Request spacing uses a fixed system minimum of 2 seconds and a maximum clamped to 2–60 seconds. The legacy `--delay-min` argument remains accepted for compatibility but no longer changes the effective system minimum.
 
+The CLI defaults to the multilingual Whisper `small` model, which can automatically detect spoken language. Use `--model small.en` when processing English-only speech.
+
 When `--keep-video` or `--keep-audio` is enabled, `--media-dir` is required.
 
 See the repository root README and `docs/INSTALL.md` for full documentation.

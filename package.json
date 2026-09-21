@@ -1,0 +1,8 @@
+{
+  "name": "reel2md-community-build",
+  "version": "0.1.2",
+  "private": true,
+  "scripts": {
+    "build": "npm ci --prefix plugin && npm --prefix plugin run build && node -e \"const fs=require('fs');fs.copyFileSync('plugin/main.js','main.js');fs.copyFileSync('plugin/styles.css','styles.css');fs.unlinkSync('plugin/main.js')\""
+  }
+}

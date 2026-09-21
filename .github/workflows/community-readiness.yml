@@ -1,0 +1,25 @@
+name: Obsidian Community Readiness
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: obsidianmd/obsidian-workflows@v1
+        with:
+          scanner-lint: true
+          strict: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

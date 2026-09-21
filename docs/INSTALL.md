@@ -105,7 +105,10 @@ Supported Instagram URL paths are:
 
 - **Include caption** — on by default.
 - **Include transcript** — on by default.
-- **Whisper model** — shown only when transcription is enabled; `small.en` is the default.
+- **Transcription model** — shown only when transcription is enabled.
+  - **Multilingual / auto-detect (`small`)** is the default and lets Whisper detect the spoken language automatically.
+  - **English only (`small.en`)** is intended for English speech.
+  - The selected model downloads on first transcription if it is not already cached.
 - **Show live job output** — optionally opens an Obsidian window with live CLI stdout/stderr while a queue job is running.
 - Metadata toggles control creator, publication time, capture time, access provenance, and transcript metadata.
 
