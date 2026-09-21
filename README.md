@@ -120,7 +120,7 @@ The Python package installs these runtime dependencies:
 
 If you are not a developer, use this section. You do **not** need to clone the repository or build anything from source.
 
-> **Current testing status:** Reel2MD 0.1.1 has been tested end-to-end on Ubuntu. Windows and macOS users are especially welcome to test it and report anything that behaves differently.
+> **Current testing status:** Reel2MD 0.1.2 has been tested end-to-end on Ubuntu. Windows and macOS users are especially welcome to test it and report anything that behaves differently.
 
 ### Step 1 — Install Python and ffmpeg
 
@@ -173,18 +173,18 @@ sudo apt install ffmpeg
 
 After installing Python or ffmpeg, close and reopen Obsidian before continuing.
 
-### Step 2 — Download Reel2MD 0.1.1
+### Step 2 — Download Reel2MD 0.1.2
 
 Until Reel2MD is available in the Obsidian Community Plugins directory, installation is manual.
 
 Download exactly these two files:
 
-- [Reel2MD plugin ZIP](https://github.com/aptoren/obsidian-reel2md/releases/download/0.1.1/reel2md-0.1.1-plugin.zip)
-- [Reel2MD CLI wheel](https://github.com/aptoren/obsidian-reel2md/releases/download/0.1.1/reel2md-0.1.1-py3-none-any.whl)
+- [Reel2MD plugin ZIP](https://github.com/aptoren/obsidian-reel2md/releases/download/0.1.2/reel2md-0.1.2-plugin.zip)
+- [Reel2MD CLI wheel](https://github.com/aptoren/obsidian-reel2md/releases/download/0.1.2/reel2md-0.1.2-py3-none-any.whl)
 
 The ZIP is the Obsidian plugin. The `.whl` file is the local Reel2MD command-line component used by the plugin.
 
-You can also view the complete [Reel2MD 0.1.1 release](https://github.com/aptoren/obsidian-reel2md/releases/tag/0.1.1).
+You can also view the complete [Reel2MD 0.1.2 release](https://github.com/aptoren/obsidian-reel2md/releases/tag/0.1.2).
 
 ### Step 3 — Install the local Reel2MD CLI
 
@@ -197,7 +197,7 @@ Assuming the wheel is in your Downloads folder:
 ```powershell
 py -m venv "$HOME\.reel2md"
 & "$HOME\.reel2md\Scripts\python.exe" -m pip install --upgrade pip
-& "$HOME\.reel2md\Scripts\python.exe" -m pip install "$HOME\Downloads\reel2md-0.1.1-py3-none-any.whl"
+& "$HOME\.reel2md\Scripts\python.exe" -m pip install "$HOME\Downloads\reel2md-0.1.2-py3-none-any.whl"
 & "$HOME\.reel2md\Scripts\reel2md.exe" deps
 ```
 
@@ -220,7 +220,7 @@ Assuming the wheel is in your Downloads folder:
 ```bash
 python3 -m venv "$HOME/.reel2md"
 "$HOME/.reel2md/bin/python" -m pip install --upgrade pip
-"$HOME/.reel2md/bin/python" -m pip install "$HOME/Downloads/reel2md-0.1.1-py3-none-any.whl"
+"$HOME/.reel2md/bin/python" -m pip install "$HOME/Downloads/reel2md-0.1.2-py3-none-any.whl"
 "$HOME/.reel2md/bin/reel2md" deps
 ```
 
@@ -258,7 +258,7 @@ The final location should be:
 <Vault>/.obsidian/plugins/reel-to-md/
 ```
 
-6. Open `reel2md-0.1.1-plugin.zip`.
+6. Open `reel2md-0.1.2-plugin.zip`.
 7. Copy these three files directly into the `reel-to-md` folder:
 
 ```text
@@ -386,7 +386,7 @@ Correct:
 Incorrect:
 
 ```text
-.obsidian/plugins/reel-to-md/reel2md-0.1.1-plugin/manifest.json
+.obsidian/plugins/reel-to-md/reel2md-0.1.2-plugin/manifest.json
 ```
 
 ### Test setup says Reel2MD is missing
@@ -422,13 +422,13 @@ Install the current wheel again:
 **Windows PowerShell**
 
 ```powershell
-& "$HOME\.reel2md\Scripts\python.exe" -m pip install --upgrade --force-reinstall "$HOME\Downloads\reel2md-0.1.1-py3-none-any.whl"
+& "$HOME\.reel2md\Scripts\python.exe" -m pip install --upgrade --force-reinstall "$HOME\Downloads\reel2md-0.1.2-py3-none-any.whl"
 ```
 
 **macOS / Linux**
 
 ```bash
-"$HOME/.reel2md/bin/python" -m pip install --upgrade --force-reinstall "$HOME/Downloads/reel2md-0.1.1-py3-none-any.whl"
+"$HOME/.reel2md/bin/python" -m pip install --upgrade --force-reinstall "$HOME/Downloads/reel2md-0.1.2-py3-none-any.whl"
 ```
 
 Then restart Obsidian.
@@ -620,13 +620,13 @@ Reel2MD is intended for personal research, note-taking, and archiving content yo
 
 ## Status
 
-Reel2MD 0.1.1 is the current public release.
+Reel2MD 0.1.2 is the current public release.
 
 It has been validated end-to-end on Ubuntu with the Obsidian desktop plugin, including clean CLI installation, local dependency checks, Instagram/Hugging Face network diagnostics, and real queue processing.
 
 Broader operating-system and environment coverage is still limited.
 
-Release: https://github.com/aptoren/obsidian-reel2md/releases/tag/0.1.1
+Release: https://github.com/aptoren/obsidian-reel2md/releases/tag/0.1.2
 
 ## License
 
