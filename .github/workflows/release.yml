@@ -1,0 +1,257 @@
+name: Reel2MD Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example 0.1.2"
+        required: true
+        type: string
+      publish:
+        description: "Publish immediately. If false, create a draft release."
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reel2md-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and verify release artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Require main branch
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "Release workflow must run from main. Current ref: ${GITHUB_REF}" >&2
+            exit 1
+          fi
+
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Validate release metadata
+        env:
+          VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must use x.y.z format. Received: $VERSION" >&2
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          import os
+          import tomllib
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+
+          root_manifest_bytes = Path("manifest.json").read_bytes()
+          plugin_manifest_bytes = Path("plugin/manifest.json").read_bytes()
+          assert root_manifest_bytes == plugin_manifest_bytes, "Root/plugin manifests differ"
+
+          manifest = json.loads(root_manifest_bytes)
+          root_pkg = json.loads(Path("package.json").read_text(encoding="utf-8"))
+          root_lock = json.loads(Path("package-lock.json").read_text(encoding="utf-8"))
+          plugin_pkg = json.loads(Path("plugin/package.json").read_text(encoding="utf-8"))
+          plugin_lock = json.loads(Path("plugin/package-lock.json").read_text(encoding="utf-8"))
+          pyproject = tomllib.loads(Path("cli/pyproject.toml").read_text(encoding="utf-8"))
+          readme = Path("README.md").read_text(encoding="utf-8")
+          release_notes = Path(f".github/release-notes/{version}.md")
+
+          assert manifest["version"] == version
+          assert manifest["id"] == "reel-to-md"
+          assert root_pkg["version"] == version
+          assert root_lock["version"] == version
+          assert root_lock["packages"][""]["version"] == version
+          assert plugin_pkg["version"] == version
+          assert plugin_lock["version"] == version
+          assert plugin_lock["packages"][""]["version"] == version
+          assert pyproject["project"]["version"] == version
+
+          assert f"Reel2MD {version} is the current public release." in readme
+          assert f"releases/download/{version}/reel2md-{version}-plugin.zip" in readme
+          assert f"releases/download/{version}/reel2md-{version}-py3-none-any.whl" in readme
+          assert release_notes.is_file(), f"Missing release notes: {release_notes}"
+
+          print(f"Release metadata validated for {version}")
+          PY
+
+      - name: Run Python regression suite
+        run: PYTHONPATH=cli python -m unittest discover -s tests -v
+
+      - name: Build Obsidian plugin
+        run: |
+          npm ci
+          npm run build
+          test -f main.js
+          test -f manifest.json
+          test -f styles.css
+          test ! -e plugin/main.js
+
+      - name: Build Python wheel and source distribution
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build cli --outdir dist
+
+      - name: Assemble release artifacts
+        env:
+          VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          cp main.js manifest.json styles.css dist/
+
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from zipfile import ZIP_DEFLATED, ZipFile
+
+          version = os.environ["VERSION"]
+          dist = Path("dist")
+          zip_path = dist / f"reel2md-{version}-plugin.zip"
+
+          with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as zf:
+              for name in ("main.js", "manifest.json", "styles.css"):
+                  zf.write(dist / name, arcname=name)
+
+          with ZipFile(zip_path, "r") as zf:
+              names = sorted(zf.namelist())
+
+          expected = ["main.js", "manifest.json", "styles.css"]
+          assert names == expected, f"Unexpected plugin ZIP contents: {names}"
+          print("Plugin ZIP contents:", ", ".join(names))
+          PY
+
+          WHEEL="dist/reel2md-${VERSION}-py3-none-any.whl"
+          SDIST="dist/reel2md-${VERSION}.tar.gz"
+
+          test -f "$WHEEL"
+          test -f "$SDIST"
+          test -f "dist/reel2md-${VERSION}-plugin.zip"
+
+      - name: Verify clean wheel installation
+        env:
+          VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          python -m venv .verify-venv
+          .verify-venv/bin/python -m pip install --no-deps "dist/reel2md-${VERSION}-py3-none-any.whl"
+          ACTUAL="$(".verify-venv/bin/reel2md" --version)"
+          echo "$ACTUAL"
+          test "$ACTUAL" = "reel2md ${VERSION}"
+
+      - name: Generate and verify SHA-256 manifest
+        env:
+          VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          cd dist
+          sha256sum             main.js             manifest.json             styles.css             "reel2md-${VERSION}-plugin.zip"             "reel2md-${VERSION}-py3-none-any.whl"             "reel2md-${VERSION}.tar.gz"             > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload verified release bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: reel2md-${{ inputs.version }}-release-bundle
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Create GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout release notes
+        uses: actions/checkout@v7
+
+      - name: Download verified release bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: reel2md-${{ inputs.version }}-release-bundle
+          path: dist/
+
+      - name: Refuse duplicate release or tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists." >&2
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists." >&2
+            exit 1
+          fi
+
+      - name: Verify downloaded checksums
+        run: |
+          cd dist
+          sha256sum -c SHA256SUMS.txt
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          PUBLISH: ${{ inputs.publish }}
+          SOURCE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          NOTES=".github/release-notes/${VERSION}.md"
+
+          ASSETS=(
+            "dist/main.js"
+            "dist/manifest.json"
+            "dist/styles.css"
+            "dist/reel2md-${VERSION}-plugin.zip"
+            "dist/reel2md-${VERSION}-py3-none-any.whl"
+            "dist/reel2md-${VERSION}.tar.gz"
+            "dist/SHA256SUMS.txt"
+          )
+
+          FLAGS=(
+            --target "$SOURCE_SHA"
+            --title "Reel2MD ${VERSION}"
+            --notes-file "$NOTES"
+            --fail-on-no-commits
+          )
+
+          if [[ "$PUBLISH" == "true" ]]; then
+            FLAGS+=(--latest)
+          else
+            FLAGS+=(--draft)
+          fi
+
+          gh release create "$VERSION" "${ASSETS[@]}" "${FLAGS[@]}"
+
+      - name: Show created release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: gh release view "$VERSION"
