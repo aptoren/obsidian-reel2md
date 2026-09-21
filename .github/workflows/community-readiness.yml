@@ -21,3 +21,5 @@ jobs:
         with:
           scanner-lint: true
           strict: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

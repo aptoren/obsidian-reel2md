@@ -393,19 +393,19 @@ Use the full path:
 **Windows**
 
 ```text
-C:\Users\<your-name>\.reel2md\Scripts\reel2md.exe
+C:\Users\USERNAME\.reel2md\Scripts\reel2md.exe
 ```
 
 **macOS / Linux**
 
 ```text
-/Users/<your-name>/.reel2md/bin/reel2md
+/Users/USERNAME/.reel2md/bin/reel2md
 ```
 
 or:
 
 ```text
-/home/<your-name>/.reel2md/bin/reel2md
+/home/USERNAME/.reel2md/bin/reel2md
 ```
 
 Then reopen Reel2MD settings.
