@@ -75,6 +75,7 @@ jobs:
           plugin_pkg = json.loads(Path("plugin/package.json").read_text(encoding="utf-8"))
           plugin_lock = json.loads(Path("plugin/package-lock.json").read_text(encoding="utf-8"))
           pyproject = tomllib.loads(Path("cli/pyproject.toml").read_text(encoding="utf-8"))
+          versions = json.loads(Path("versions.json").read_text(encoding="utf-8"))
           readme = Path("README.md").read_text(encoding="utf-8")
           release_notes = Path(f".github/release-notes/{version}.md")
 
@@ -87,6 +88,9 @@ jobs:
           assert plugin_lock["version"] == version
           assert plugin_lock["packages"][""]["version"] == version
           assert pyproject["project"]["version"] == version
+          assert versions.get(version) == manifest["minAppVersion"], (
+              "versions.json must map the release version to manifest.minAppVersion"
+          )
 
           assert f"Reel2MD {version} is the current public release." in readme
           assert f"releases/download/{version}/reel2md-{version}-plugin.zip" in readme
