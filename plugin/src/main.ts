@@ -120,6 +120,10 @@ function normalizeTranscriptionModel(value: unknown): TranscriptionModel {
   return value === "small.en" ? "small.en" : "small";
 }
 
+function toError(value: unknown): Error {
+  return value instanceof Error ? value : new Error(String(value));
+}
+
 function resolveExecutablePath(command: string): string | null {
   const expanded = expandHome(command.trim());
   if (!expanded) return null;
@@ -423,7 +427,7 @@ export default class Reel2MDPlugin extends Plugin {
       });
 
       child.on("error", (error) => {
-        reject(error);
+        reject(toError(error));
       });
 
       child.on("close", (code) => {
@@ -773,6 +777,11 @@ class Reel2MDSettingTab extends PluginSettingTab {
           setting.settingEl.empty();
           setting.settingEl.createEl("p", {
             text: "Reel2MD converts supported Instagram video posts into structured Markdown using a local CLI. Transcription runs locally, and Reel2MD does not copy Instagram cookies or credentials into your vault."
+          });
+          const identityEl = setting.settingEl.createEl("p");
+          identityEl.createEl("a", {
+            text: "A RichDir project",
+            href: "https://richdir.com"
           });
         }
       },
