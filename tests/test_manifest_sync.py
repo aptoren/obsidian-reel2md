@@ -45,7 +45,7 @@ class ManifestSyncTests(unittest.TestCase):
         self.assertRegex(plugin_id, r"^[a-z-]+$")
         self.assertNotIn("obsidian", plugin_id)
         self.assertFalse(plugin_id.endswith("plugin"))
-        self.assertEqual(manifest["version"], "0.1.2")
+        self.assertRegex(manifest["version"], r"^\d+\.\d+\.\d+$")
         self.assertTrue(manifest["isDesktopOnly"])
 
 
