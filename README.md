@@ -98,8 +98,8 @@ Reel2MD is local-first, but ingestion and model setup require explicit external 
 - **Instagram** — `yt-dlp` requests metadata and media for the Instagram URLs you choose to process. Media may be served from Instagram/CDN endpoints.
 - **Hugging Face** — `faster-whisper` model metadata/files are accessed when the selected model is not already cached, and when you explicitly run the network test.
 - **Authenticated browser fallback** — off by default. If enabled, `yt-dlp` reads the selected browser's existing session only when anonymous Instagram access fails. Reel2MD does not copy browser cookie values into the vault or generated Markdown.
-- **Local processes** — the desktop plugin starts the configured `reel2md` CLI and `ffmpeg` executables on your machine.
-- **Files** — generated Markdown is written to the configured vault folder. Retained video/audio is written only when you enable retention and explicitly configure a media folder; that folder may be outside the vault.
+- **Local processes** — the desktop plugin uses Node.js `child_process.spawn` to start only the configured `reel2md` CLI and `ffmpeg` executables. It does not construct shell command strings or enable shell execution.
+- **Filesystem access** — the desktop plugin uses Node.js filesystem APIs to resolve and validate local executable paths. Generated Markdown is written to the configured vault folder. Retained video/audio is written only when you enable retention and explicitly configure a media folder; that folder may be outside the vault.
 - **Proxy settings** — a manually entered proxy URL is stored in the plugin's local settings. Avoid embedding credentials unless you accept that local storage model.
 
 Opening the settings page runs local dependency checks only. Instagram and Hugging Face network checks run only when you explicitly choose **Test network**. Reel2MD does not implement analytics or telemetry.
@@ -122,7 +122,7 @@ The Python package installs these runtime dependencies:
 
 If you are not a developer, use this section. You do **not** need to clone the repository or build anything from source.
 
-> **Current testing status:** Reel2MD 0.1.3 has been tested end-to-end on Ubuntu. Windows and macOS users are especially welcome to test it and report anything that behaves differently.
+> **Current testing status:** Reel2MD 0.1.4 has been tested end-to-end on Ubuntu. Windows and macOS users are especially welcome to test it and report anything that behaves differently.
 
 ### Step 1 — Install Python and ffmpeg
 
@@ -175,18 +175,18 @@ sudo apt install ffmpeg
 
 After installing Python or ffmpeg, close and reopen Obsidian before continuing.
 
-### Step 2 — Download Reel2MD 0.1.3
+### Step 2 — Download Reel2MD 0.1.4
 
 Until Reel2MD is available in the Obsidian Community Plugins directory, installation is manual.
 
 Download exactly these two files:
 
-- [Reel2MD plugin ZIP](https://github.com/aptoren/obsidian-reel2md/releases/download/0.1.3/reel2md-0.1.3-plugin.zip)
-- [Reel2MD CLI wheel](https://github.com/aptoren/obsidian-reel2md/releases/download/0.1.3/reel2md-0.1.3-py3-none-any.whl)
+- [Reel2MD plugin ZIP](https://github.com/aptoren/obsidian-reel2md/releases/download/0.1.4/reel2md-0.1.4-plugin.zip)
+- [Reel2MD CLI wheel](https://github.com/aptoren/obsidian-reel2md/releases/download/0.1.4/reel2md-0.1.4-py3-none-any.whl)
 
 The ZIP is the Obsidian plugin. The `.whl` file is the local Reel2MD command-line component used by the plugin.
 
-You can also view the complete [Reel2MD 0.1.3 release](https://github.com/aptoren/obsidian-reel2md/releases/tag/0.1.3).
+You can also view the complete [Reel2MD 0.1.4 release](https://github.com/aptoren/obsidian-reel2md/releases/tag/0.1.4).
 
 ### Step 3 — Install the local Reel2MD CLI
 
@@ -199,7 +199,7 @@ Assuming the wheel is in your Downloads folder:
 ```powershell
 py -m venv "$HOME\.reel2md"
 & "$HOME\.reel2md\Scripts\python.exe" -m pip install --upgrade pip
-& "$HOME\.reel2md\Scripts\python.exe" -m pip install "$HOME\Downloads\reel2md-0.1.3-py3-none-any.whl"
+& "$HOME\.reel2md\Scripts\python.exe" -m pip install "$HOME\Downloads\reel2md-0.1.4-py3-none-any.whl"
 & "$HOME\.reel2md\Scripts\reel2md.exe" deps
 ```
 
@@ -222,7 +222,7 @@ Assuming the wheel is in your Downloads folder:
 ```bash
 python3 -m venv "$HOME/.reel2md"
 "$HOME/.reel2md/bin/python" -m pip install --upgrade pip
-"$HOME/.reel2md/bin/python" -m pip install "$HOME/Downloads/reel2md-0.1.3-py3-none-any.whl"
+"$HOME/.reel2md/bin/python" -m pip install "$HOME/Downloads/reel2md-0.1.4-py3-none-any.whl"
 "$HOME/.reel2md/bin/reel2md" deps
 ```
 
@@ -260,7 +260,7 @@ The final location should be:
 <Vault>/.obsidian/plugins/reel-to-md/
 ```
 
-6. Open `reel2md-0.1.3-plugin.zip`.
+6. Open `reel2md-0.1.4-plugin.zip`.
 7. Copy these three files directly into the `reel-to-md` folder:
 
 ```text
@@ -388,7 +388,7 @@ Correct:
 Incorrect:
 
 ```text
-.obsidian/plugins/reel-to-md/reel2md-0.1.3-plugin/manifest.json
+.obsidian/plugins/reel-to-md/reel2md-0.1.4-plugin/manifest.json
 ```
 
 ### Test setup says Reel2MD is missing
@@ -424,13 +424,13 @@ Install the current wheel again:
 **Windows PowerShell**
 
 ```powershell
-& "$HOME\.reel2md\Scripts\python.exe" -m pip install --upgrade --force-reinstall "$HOME\Downloads\reel2md-0.1.3-py3-none-any.whl"
+& "$HOME\.reel2md\Scripts\python.exe" -m pip install --upgrade --force-reinstall "$HOME\Downloads\reel2md-0.1.4-py3-none-any.whl"
 ```
 
 **macOS / Linux**
 
 ```bash
-"$HOME/.reel2md/bin/python" -m pip install --upgrade --force-reinstall "$HOME/Downloads/reel2md-0.1.3-py3-none-any.whl"
+"$HOME/.reel2md/bin/python" -m pip install --upgrade --force-reinstall "$HOME/Downloads/reel2md-0.1.4-py3-none-any.whl"
 ```
 
 Then restart Obsidian.
@@ -622,13 +622,13 @@ Reel2MD is intended for personal research, note-taking, and archiving content yo
 
 ## Status
 
-Reel2MD 0.1.3 is the current public release.
+Reel2MD 0.1.4 is the current public release.
 
 It has been validated end-to-end on Ubuntu with the Obsidian desktop plugin, including clean CLI installation, local dependency checks, Instagram/Hugging Face network diagnostics, and real queue processing.
 
 Broader operating-system and environment coverage is still limited.
 
-Release: https://github.com/aptoren/obsidian-reel2md/releases/tag/0.1.3
+Release: https://github.com/aptoren/obsidian-reel2md/releases/tag/0.1.4
 
 ## License
 
