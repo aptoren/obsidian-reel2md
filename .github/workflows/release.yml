@@ -24,6 +24,10 @@ jobs:
   build:
     name: Build and verify release artifacts
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
 
     steps:
       - name: Require main branch
@@ -172,6 +176,14 @@ jobs:
           sha256sum             main.js             manifest.json             styles.css             "reel2md-${VERSION}-plugin.zip"             "reel2md-${VERSION}-py3-none-any.whl"             "reel2md-${VERSION}.tar.gz"             > SHA256SUMS.txt
           sha256sum -c SHA256SUMS.txt
           cat SHA256SUMS.txt
+
+      - name: Attest Obsidian release assets
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/main.js
+            dist/manifest.json
+            dist/styles.css
 
       - name: Upload verified release bundle
         uses: actions/upload-artifact@v7

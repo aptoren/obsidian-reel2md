@@ -4,6 +4,8 @@ Reel2MD turns supported Instagram video URLs into structured Markdown notes for 
 
 It is intentionally small and local-first: a Python CLI performs ingestion and local transcription, while an optional desktop-only Obsidian plugin provides configuration, validation, dependency checks, live job output, and a one-command queue workflow.
 
+[A RichDir project](https://richdir.com)
+
 > **New to Reel2MD?** Start with the [Beginner installation guide](#beginner-installation-guide). It walks through installation, first setup, testing, and common problems step by step.
 
 ## What it does
