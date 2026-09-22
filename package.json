@@ -1,13 +1,15 @@
 {
   "name": "reel2md-community-build",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "scripts": {
-    "build": "npm ci --prefix plugin && npm --prefix plugin run build && node -e \"const fs=require('fs');fs.copyFileSync('plugin/main.js','main.js');fs.copyFileSync('plugin/styles.css','styles.css');fs.unlinkSync('plugin/main.js')\""
+    "build": "node node_modules/typescript/bin/tsc -p plugin/tsconfig.json --noEmit --skipLibCheck && cd plugin && node ../node_modules/esbuild/bin/esbuild src/main.ts --bundle --external:obsidian --external:electron --platform=node --format=cjs --target=es2018 --tree-shaking=true --minify --outfile=main.js && cd .. && node -e \"const fs=require('fs');fs.copyFileSync('plugin/main.js','main.js');fs.copyFileSync('plugin/styles.css','styles.css');fs.unlinkSync('plugin/main.js')\""
   },
   "devDependencies": {
     "@types/node": "24.13.5",
+    "esbuild": "0.25.12",
     "obsidian": "1.13.1",
+    "tslib": "2.8.1",
     "typescript": "5.9.3"
   }
 }
