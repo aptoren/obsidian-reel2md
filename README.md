@@ -6,6 +6,8 @@ It is intentionally small and local-first: a Python CLI performs ingestion and l
 
 [A RichDir project](https://richdir.com)
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/X5H127HKJR)
+
 > **New to Reel2MD?** Start with the [Beginner installation guide](#beginner-installation-guide). It walks through installation, first setup, testing, and common problems step by step.
 
 ## What it does
